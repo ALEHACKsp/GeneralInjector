@@ -183,6 +183,7 @@
     </ResourceCompile>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClInclude Include="CProcessListDlg.h" />
     <ClInclude Include="GeneralInjector.h" />
     <ClInclude Include="GeneralInjectorDlg.h" />
     <ClInclude Include="Resource.h" />
@@ -190,6 +191,7 @@
     <ClInclude Include="targetver.h" />
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="CProcessListDlg.cpp" />
     <ClCompile Include="GeneralInjector.cpp" />
     <ClCompile Include="GeneralInjectorDlg.cpp" />
     <ClCompile Include="stdafx.cpp">
