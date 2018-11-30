@@ -187,6 +187,7 @@
     <ClInclude Include="GeneralInjector.h" />
     <ClInclude Include="GeneralInjectorDlg.h" />
     <ClInclude Include="Helper.h" />
+    <ClInclude Include="InjectTool.h" />
     <ClInclude Include="Resource.h" />
     <ClInclude Include="SortListCtrl.h" />
     <ClInclude Include="stdafx.h" />
@@ -197,6 +198,7 @@
     <ClCompile Include="GeneralInjector.cpp" />
     <ClCompile Include="GeneralInjectorDlg.cpp" />
     <ClCompile Include="Helper.cpp" />
+    <ClCompile Include="InjectTool.cpp" />
     <ClCompile Include="SortListCtrl.cpp" />
     <ClCompile Include="stdafx.cpp">
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">Create</PrecompiledHeader>

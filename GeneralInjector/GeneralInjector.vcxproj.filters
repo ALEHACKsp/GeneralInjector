@@ -42,6 +42,9 @@
     <ClInclude Include="SortListCtrl.h">
       <Filter>Source Files\CustomeCtrl</Filter>
     </ClInclude>
+    <ClInclude Include="InjectTool.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="GeneralInjector.cpp">
@@ -61,6 +64,9 @@
     </ClCompile>
     <ClCompile Include="SortListCtrl.cpp">
       <Filter>Source Files\CustomeCtrl</Filter>
+    </ClCompile>
+    <ClCompile Include="InjectTool.cpp">
+      <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>

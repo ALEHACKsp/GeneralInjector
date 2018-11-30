@@ -325,7 +325,7 @@ void CSortListCtrl::LoadColumnInfo()
 	}
 }
 
-
+#pragma warning(disable :4244)
 void CSortListCtrl::SaveColumnInfo()
 {
 	ASSERT( m_iNumColumns > 0 );
@@ -346,6 +346,7 @@ void CSortListCtrl::SaveColumnInfo()
 
 	free( buf );
 }
+#pragma warning(default :4244)
 
 
 void CSortListCtrl::OnDestroy() 
