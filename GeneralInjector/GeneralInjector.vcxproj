@@ -211,9 +211,12 @@
     <ResourceCompile Include="GeneralInjector.rc" />
   </ItemGroup>
   <ItemGroup>
+    <None Include="res\Finder.cur" />
     <None Include="res\GeneralInjector.rc2" />
   </ItemGroup>
   <ItemGroup>
+    <Image Include="res\DockedFinder.ico" />
+    <Image Include="res\FloatingFinder.ico" />
     <Image Include="res\GeneralInjector.ico" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
