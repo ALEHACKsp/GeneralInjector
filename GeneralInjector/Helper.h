@@ -49,6 +49,8 @@ public:
 	static BOOLEAN GetProcessFilename(DWORD Pid, LPTSTR Filename);
 	static BOOLEAN GetProcessFilename(DWORD Pid, CString& Filename);
 	static BOOLEAN IsProcessWow64(DWORD Pid, PBOOL IsWow64);
+	static BOOLEAN FileExists(LPCTSTR szPath);
+	static void ErrorPop(LPCTSTR ErrorMsg);
 #ifndef _AMD64_
 	static BOOLEAN IsWow64Emulator();
 #endif
