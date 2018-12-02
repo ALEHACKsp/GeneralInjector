@@ -25,8 +25,8 @@ public:
 	InjectTool() : 
 		m_InjectType(INJECT_CREATE_REMOTE_THREAD), 
 		m_TargetPid(0), 
-		m_TargetDll(""),
 		m_TargetTid(0),
+		m_TargetDll(""),
 		m_TargetWindow(NULL){}
 
 	CString GetTargetDll() { return m_TargetDll; }

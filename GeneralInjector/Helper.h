@@ -40,6 +40,12 @@
 #define IMPORT_NEXT_DESCRIPTOR(pID)	((PIMAGE_IMPORT_DESCRIPTOR)(OffsetToVA(pID, sizeof(IMAGE_IMPORT_DESCRIPTOR))))
 
 
+typedef struct _GUI_INFO
+{
+	HWND	hWindow;
+	DWORD	ThreadId;
+	DWORD	ProcessId;
+}GUI_INFO, *PGUI_INFO;
 
 class Helper
 {
@@ -50,7 +56,10 @@ public:
 	static BOOLEAN GetProcessFilename(DWORD Pid, CString& Filename);
 	static BOOLEAN IsProcessWow64(DWORD Pid, PBOOL IsWow64);
 	static BOOLEAN FileExists(LPCTSTR szPath);
+	static DWORD GetMainThreadId(DWORD dwOwnerPID);
 	static void ErrorPop(LPCTSTR ErrorMsg);
+	static BOOLEAN GetProcessGUIThreadInfo(PGUI_INFO pGUIInfo);
+	static DWORD GetProcessGUIThreadInfo(DWORD Pid, HWND* FoundWnd);
 #ifndef _AMD64_
 	static BOOLEAN IsWow64Emulator();
 #endif

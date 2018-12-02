@@ -6,6 +6,7 @@
 
 
 
+
 static BOOLEAN EnableDebugPrivilege()
 {
 	HANDLE hToken = NULL;
@@ -24,7 +25,6 @@ static BOOLEAN EnableDebugPrivilege()
 	CloseHandle(hToken);
 	return TRUE;
 }
-
 
 BOOLEAN Helper::IsProcessWow64(DWORD Pid, PBOOL IsWow64)
 {
@@ -156,6 +156,72 @@ BOOLEAN Helper::FileExists(LPCTSTR szPath)
 
 	return (dwAttrib != INVALID_FILE_ATTRIBUTES &&
 		!(dwAttrib & FILE_ATTRIBUTE_DIRECTORY));
+}
+
+DWORD Helper::GetMainThreadId(DWORD dwOwnerPID)
+{
+	HANDLE  hThreadSnap = NULL;
+	THREADENTRY32 te32;
+
+	// Take a snapshot of all running threads
+	if ((hThreadSnap = CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0)) ==
+		INVALID_HANDLE_VALUE)
+	{
+		return 0;
+	}
+
+	te32.dwSize = sizeof(THREADENTRY32);
+
+	// Retrieve infomation about the frist thread
+	if (!Thread32First(hThreadSnap, &te32))
+	{
+		return 0;
+	}
+
+	while (te32.th32OwnerProcessID != dwOwnerPID)
+	{
+		Thread32Next(hThreadSnap, &te32);
+		if (te32.th32OwnerProcessID == dwOwnerPID)
+			return te32.th32ThreadID;
+	}
+
+	return 0;
+}
+
+BOOL CALLBACK EnumWindowsProc(
+	HWND   hwnd,
+	LPARAM lParam
+)
+{
+	DWORD pid, tid = 0;
+	PGUI_INFO guiInfo = (PGUI_INFO)lParam;
+
+	tid = GetWindowThreadProcessId(hwnd, &pid);
+	if (!tid)	return FALSE;
+
+	if (pid == guiInfo->ProcessId)
+	{
+		guiInfo->hWindow = hwnd;
+		guiInfo->ThreadId = tid;
+		SetLastError(ERROR_SUCCESS);
+		return FALSE;
+	}
+
+	return TRUE;
+}
+
+BOOLEAN Helper::GetProcessGUIThreadInfo(PGUI_INFO pGUIInfo)
+{
+	if (!EnumWindows((WNDENUMPROC)EnumWindowsProc, (LPARAM)pGUIInfo) &&
+		GetLastError() != ERROR_SUCCESS)
+		return FALSE;
+
+	return TRUE;
+}
+
+DWORD Helper::GetProcessGUIThreadInfo(DWORD Pid, HWND * FoundWnd)
+{
+	return 0;
 }
 
 #ifndef _AMD64_
