@@ -44,9 +44,12 @@
 class Helper
 {
 public:
-     static BOOLEAN GetProcessFullpath( DWORD Pid, LPTSTR ImagePath );
-     static BOOLEAN IsProcessWow64( DWORD Pid , PBOOL IsWow64);
+	static BOOLEAN GetProcessFullpath(DWORD Pid, CString& ImagePath);
+	static BOOLEAN GetProcessFullpath(DWORD Pid, LPTSTR ImagePath);
+	static BOOLEAN GetProcessFilename(DWORD Pid, LPTSTR Filename);
+	static BOOLEAN GetProcessFilename(DWORD Pid, CString& Filename);
+	static BOOLEAN IsProcessWow64(DWORD Pid, PBOOL IsWow64);
 #ifndef _AMD64_
-     static BOOLEAN IsWow64Emulator();
+	static BOOLEAN IsWow64Emulator();
 #endif
 };

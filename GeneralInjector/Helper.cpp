@@ -40,6 +40,20 @@ BOOLEAN Helper::IsProcessWow64( DWORD Pid , PBOOL IsWow64)
      return FALSE;
 }
 
+BOOLEAN Helper::GetProcessFullpath(DWORD Pid, CString & ImagePath)
+{
+	TCHAR tmpPath[MAX_PATH] = { 0 };
+	
+	if (GetProcessFullpath(Pid, tmpPath))
+	{
+		ImagePath = tmpPath;
+		return TRUE;
+	}
+
+	ImagePath = _T("Unknown path");
+	return FALSE;
+}
+
 BOOLEAN Helper::GetProcessFullpath( DWORD Pid ,LPTSTR ImagePath)
 {
      if ( Pid == 0 )	return FALSE;	// Skip Idle process
@@ -62,6 +76,49 @@ BOOLEAN Helper::GetProcessFullpath( DWORD Pid ,LPTSTR ImagePath)
           CloseHandle( hModuleSnap );
      }
      return FALSE;
+}
+
+BOOLEAN Helper::GetProcessFilename(DWORD Pid, LPTSTR Filename)
+{
+	HANDLE hProcessSnap;
+	PROCESSENTRY32 pe32;
+
+	// Take a snapshot of all processes in the system.
+	hProcessSnap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+	if (INVALID_HANDLE_VALUE == hProcessSnap) return FALSE;
+	
+	pe32.dwSize = sizeof(PROCESSENTRY32); 
+	if (!Process32First(hProcessSnap, &pe32))
+	{
+		CloseHandle(hProcessSnap);          // clean the snapshot object
+		return FALSE;
+	}
+
+	do
+	{
+		if (Pid == pe32.th32ProcessID)
+		{
+			_tcscpy_s(Filename, MAX_PATH, pe32.szExeFile);
+			return TRUE;
+		}
+	} while (Process32Next(hProcessSnap, &pe32));
+
+	CloseHandle(hProcessSnap);
+
+	return FALSE;
+}
+
+BOOLEAN Helper::GetProcessFilename(DWORD Pid, CString& Filename)
+{
+	TCHAR tmpName[MAX_PATH] = { 0 };
+	if (GetProcessFilename(Pid, tmpName))
+	{
+		Filename = tmpName;
+		return TRUE;
+	}
+
+	Filename = _T("Unknown name");
+	return FALSE;
 }
 
 #ifndef _AMD64_
