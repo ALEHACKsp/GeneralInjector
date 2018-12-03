@@ -31,6 +31,9 @@ BOOLEAN InjectTool::Inject()
 	case INJECT_QUEUE_USER_APC:
 		ret = InjectQueueUserApc();
 		break;
+	case INJECT_SET_WINDOW_HOOK:
+		ret = InjectSetWndHook();
+		break;
 	default:
 		return FALSE;
 
@@ -234,4 +237,28 @@ BOOLEAN InjectTool::InjectThreadHijack()
 BOOLEAN InjectTool::InjectQueueUserApc()
 {
 	return BOOLEAN();
+}
+
+BOOLEAN InjectTool::InjectSetWndHook()
+{
+	HMODULE hTargetDll = LoadLibrary(m_TargetDll);
+	if (!hTargetDll)
+	{
+		Helper::ErrorPop(_T("Load target dll into injector failed.\n"));
+		return FALSE;
+	}
+	
+	HHOOK hHook = SetWindowsHookExA(WH_GETMESSAGE, (HOOKPROC)CallNextHookEx, hTargetDll, m_TargetTid);
+	if (!hHook)
+	{
+		Helper::ErrorPop(_T("Install windows hook failed.\n"));
+		return FALSE;
+	}
+
+	PostMessage(m_TargetWindow, WM_KEYDOWN, 'A', NULL);
+	PostMessage(m_TargetWindow, WM_KEYUP, 'A', NULL);
+
+	
+	return TRUE;
+
 }
