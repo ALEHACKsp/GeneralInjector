@@ -5,8 +5,8 @@
 typedef enum _INJECT_TYPE
 {
 	INJECT_CREATE_REMOTE_THREAD = 0,
-	INJECT_QUEUE_USER_APC,
 	INJECT_THREAD_HIJACK,
+	INJECT_QUEUE_USER_APC,
 	INJECT_SET_WINDOW_HOOK,
 	INJECT_IME,
 	INJECT_MANUAL
@@ -45,4 +45,5 @@ public:
 	BOOLEAN InjectCreateRemoteThread();
 	BOOLEAN InjectThreadHijack();
 	BOOLEAN InjectQueueUserApc();
+	BOOLEAN InjectSetWndHook();
 };

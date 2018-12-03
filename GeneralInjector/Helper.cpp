@@ -212,11 +212,9 @@ BOOL CALLBACK EnumWindowsProc(
 
 BOOLEAN Helper::GetProcessGUIThreadInfo(PGUI_INFO pGUIInfo)
 {
-	if (!EnumWindows((WNDENUMPROC)EnumWindowsProc, (LPARAM)pGUIInfo) &&
-		GetLastError() != ERROR_SUCCESS)
-		return FALSE;
+	EnumWindows((WNDENUMPROC)EnumWindowsProc, (LPARAM)pGUIInfo);
 
-	return TRUE;
+	return (pGUIInfo->hWindow != NULL) ? TRUE : FALSE;
 }
 
 DWORD Helper::GetProcessGUIThreadInfo(DWORD Pid, HWND * FoundWnd)
