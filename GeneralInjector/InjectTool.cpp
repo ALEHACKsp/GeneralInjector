@@ -236,7 +236,51 @@ BOOLEAN InjectTool::InjectThreadHijack()
 
 BOOLEAN InjectTool::InjectQueueUserApc()
 {
-	return BOOLEAN();
+	LPTSTR dllBuffer = m_TargetDll.GetBuffer();
+	DWORD dllBufferSize = (m_TargetDll.GetLength() + 1) * sizeof(TCHAR);
+
+	HANDLE hProcess = OpenProcess(PROCESS_ALL_ACCESS, FALSE, m_TargetPid);
+	if (!hProcess)
+	{
+		Helper::ErrorPop(_T("Get target process handle failed."));
+		return FALSE;
+	}
+
+	HANDLE hThread = OpenThread(THREAD_ALL_ACCESS, FALSE, m_TargetTid);
+	if (!hThread)
+	{
+		Helper::ErrorPop(_T("Get target thread handle failed."));
+		return FALSE;
+	}
+
+	LPVOID loadLibraryAddress = GetProcAddress(GetModuleHandle(_T("kernel32.dll")), LOAD_LIBRARY);
+	if (!loadLibraryAddress)
+	{
+		Helper::ErrorPop(_T("Get LoadLibrary address failed."));
+		return FALSE;
+	}
+
+	LPVOID remoteDllPath = VirtualAllocEx(hProcess, NULL, dllBufferSize, MEM_COMMIT, PAGE_READWRITE);
+	if (!remoteDllPath)
+	{
+		Helper::ErrorPop(_T("Alloc remote dll path failed."));
+		return FALSE;
+	}
+
+	if (!WriteProcessMemory(hProcess, remoteDllPath, dllBuffer, dllBufferSize, NULL))
+	{
+		Helper::ErrorPop(_T("Cannot write dll path to target process."));
+		return FALSE;
+	}
+
+	if (!QueueUserAPC((PAPCFUNC)loadLibraryAddress, hThread, (ULONG_PTR)remoteDllPath))
+	{
+		Helper::ErrorPop(_T("QueueUserApc failed."));
+		return FALSE;
+	}
+	
+	AfxMessageBox(_T("Note that target dll will be injected only after target thread entered ALERTABLE state!!"));
+	return TRUE;
 }
 
 BOOLEAN InjectTool::InjectSetWndHook()
@@ -247,7 +291,7 @@ BOOLEAN InjectTool::InjectSetWndHook()
 		Helper::ErrorPop(_T("Load target dll into injector failed.\n"));
 		return FALSE;
 	}
-	
+
 	HHOOK hHook = SetWindowsHookExA(WH_GETMESSAGE, (HOOKPROC)CallNextHookEx, hTargetDll, m_TargetTid);
 	if (!hHook)
 	{
@@ -258,7 +302,7 @@ BOOLEAN InjectTool::InjectSetWndHook()
 	PostMessage(m_TargetWindow, WM_KEYDOWN, 'A', NULL);
 	PostMessage(m_TargetWindow, WM_KEYUP, 'A', NULL);
 
-	
+
 	return TRUE;
 
 }
