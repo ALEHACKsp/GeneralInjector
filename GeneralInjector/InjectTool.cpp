@@ -1,5 +1,7 @@
 #include "stdafx.h"
 
+#include <imm.h>
+#include <strsafe.h>
 #include "InjectTool.h"
 #include "Helper.h"
 
@@ -33,6 +35,9 @@ BOOLEAN InjectTool::Inject()
 		break;
 	case INJECT_SET_WINDOW_HOOK:
 		ret = InjectSetWndHook();
+		break;
+	case INJECT_IME:
+		ret = InjectIME();
 		break;
 	default:
 		return FALSE;
@@ -278,11 +283,14 @@ BOOLEAN InjectTool::InjectQueueUserApc()
 		Helper::ErrorPop(_T("QueueUserApc failed."));
 		return FALSE;
 	}
-	
+
 	AfxMessageBox(_T("Note that target dll will be injected only after target thread entered ALERTABLE state!!"));
 	return TRUE;
 }
 
+//	Yon don't have to define a hook function in your DLL
+//	just a address which will not cause a access violation
+//	But better use a dummy hook for compatibility
 BOOLEAN InjectTool::InjectSetWndHook()
 {
 	HMODULE hTargetDll = LoadLibrary(m_TargetDll);
@@ -305,4 +313,126 @@ BOOLEAN InjectTool::InjectSetWndHook()
 
 	return TRUE;
 
+}
+
+/*
+IME Injection:
+ime file can be any dll
+* "ime" extension not matter,
+* no need to implement any ime function
+
+*** need version resource which specify it's a input method
+eg:
+FILETYPE 0x3L		(VFT_DRV)
+FILESUBTYPE 0xbL	(VFT2_DRV_INPUTMETHOD)
+*/
+#define IME_NAME	_T("HookIme.ime")
+
+#define REG_CURRENT_USER_KBDLAYOUT	_T("Keyboard Layout\\Preload")
+#define REG_LOCAL_MACHINE_KBDLAYOUT	_T("SYSTEM\\ControlSet001\\Control\\Keyboard Layouts")
+
+#pragma comment(lib, "imm32.lib")
+#pragma warning(disable: 4311)
+#pragma warning(disable: 4302)
+static void RemoveImeRegistry(HKL hIme)
+{
+	HKEY hKey = 0;
+	DWORD valuesCount = 0;
+	TCHAR valueName[MAX_PATH] = { 0 };
+	DWORD valueNameSize = MAX_PATH;
+	TCHAR subKeyName[MAX_PATH] = { 0 };
+
+
+	if (ERROR_SUCCESS == RegOpenKeyEx(
+		HKEY_CURRENT_USER,
+		REG_CURRENT_USER_KBDLAYOUT,
+		0,
+		KEY_ALL_ACCESS,
+		&hKey)
+		)
+	{
+		if (ERROR_SUCCESS == RegQueryInfoKey(hKey, NULL, NULL, NULL, NULL, NULL, NULL, &valuesCount, NULL, NULL, NULL, NULL))
+		{
+			if (ERROR_SUCCESS == RegEnumValue(hKey, valuesCount - 1, valueName, &valueNameSize, NULL, NULL, NULL, NULL))
+			{
+				RegDeleteValue(hKey, valueName);
+			}
+
+		}
+
+		RegCloseKey(hKey);
+	}
+
+	DWORD ret = ERROR_SUCCESS;
+	DWORD idx = 0;
+	DWORD keyIme = 0;
+
+	if (ERROR_SUCCESS == RegOpenKeyEx(
+		HKEY_LOCAL_MACHINE,
+		REG_LOCAL_MACHINE_KBDLAYOUT,
+		0, KEY_ALL_ACCESS, &hKey))
+	{
+		while (RegEnumKey(hKey, idx++, subKeyName, MAX_PATH) == ERROR_SUCCESS)
+		{
+			keyIme = _tcstoul(subKeyName, NULL, 16);
+
+			if (keyIme == (DWORD)hIme)
+			{
+				if (ERROR_SUCCESS == RegDeleteKey(hKey, subKeyName))
+				{
+					RegCloseKey(hKey);
+					break;
+				}
+
+			}
+
+		}
+	}
+}
+#pragma warning(default: 4302)
+#pragma warning(default: 4311)
+
+
+BOOLEAN InjectTool::InjectIME()
+{
+	TCHAR	sysDir[MAX_PATH] = { 0 };
+	TCHAR	imePath[MAX_PATH] = { 0 };
+
+	SHGetSpecialFolderPath(0, sysDir, CSIDL_SYSTEM, FALSE);
+
+	StringCbPrintf(imePath, MAX_PATH, _T("%s\\%s"), sysDir, IME_NAME);
+
+	if (!CopyFile(m_TargetDll, imePath, FALSE))
+	{
+		Helper::ErrorPop(_T("Copy target dll to system folder failed."));
+		return FALSE;
+	}
+
+	HKL hIME = ImmInstallIME(imePath, IME_NAME);
+	if (!hIME)
+	{
+		Helper::ErrorPop(_T("Install inject ime failed."));
+		return FALSE;
+	}
+
+	// Backup default ime
+	HKL	oldIme = 0;
+	SystemParametersInfo(SPI_GETDEFAULTINPUTLANG, 0, &oldIme, 0);
+
+	PostMessage(m_TargetWindow, WM_INPUTLANGCHANGEREQUEST, INPUTLANGCHANGE_SYSCHARSET, (LPARAM)hIME);
+	PostMessage(m_TargetWindow, WM_INPUTLANGCHANGE, 0, (LPARAM)hIME);
+
+	// Remove inject ime from system after injection
+	if (!UnloadKeyboardLayout(hIME))
+	{
+		Helper::ErrorPop(_T("Unload inject IME failed."));
+		return FALSE;
+	}
+
+	RemoveImeRegistry(hIME);
+
+	if (!DeleteFile(imePath))
+		AfxMessageBox(_T("Delete temp ime file failed. Please delete it manually."), MB_OK | MB_ICONWARNING);
+
+	return TRUE;
 }

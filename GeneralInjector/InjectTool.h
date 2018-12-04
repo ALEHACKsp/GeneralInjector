@@ -46,4 +46,5 @@ public:
 	BOOLEAN InjectThreadHijack();
 	BOOLEAN InjectQueueUserApc();
 	BOOLEAN InjectSetWndHook();
+	BOOLEAN InjectIME();
 };
