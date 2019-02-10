@@ -39,6 +39,8 @@ BOOLEAN InjectTool::Inject()
 	case INJECT_IME:
 		ret = InjectIME();
 		break;
+	case INJECT_MANUAL:
+		ret = InjectManual();
 	default:
 		return FALSE;
 
@@ -409,8 +411,7 @@ BOOLEAN InjectTool::InjectIME()
 	}
 
 	HKL hIME = ImmInstallIME(imePath, IME_NAME);
-	if (!hIME)
-	{
+	if (!hIME) {
 		Helper::ErrorPop(_T("Install inject ime failed."));
 		return FALSE;
 	}
@@ -423,8 +424,7 @@ BOOLEAN InjectTool::InjectIME()
 	PostMessage(m_TargetWindow, WM_INPUTLANGCHANGE, 0, (LPARAM)hIME);
 
 	// Remove inject ime from system after injection
-	if (!UnloadKeyboardLayout(hIME))
-	{
+	if (!UnloadKeyboardLayout(hIME)) {
 		Helper::ErrorPop(_T("Unload inject IME failed."));
 		return FALSE;
 	}
@@ -433,6 +433,239 @@ BOOLEAN InjectTool::InjectIME()
 
 	if (!DeleteFile(imePath))
 		AfxMessageBox(_T("Delete temp ime file failed. Please delete it manually."), MB_OK | MB_ICONWARNING);
+
+	return TRUE;
+}
+
+/*
+Manually Dll Inject:
+*****************************************
+
+MAKE SURE YOUR DLL ARE RELEASE BUILDED
+
+MAKE SURE YOUR INJECTOR ARE RELEASE BUILDED
+
+******************************************
+1. Load target dll into injector,
+2. Create memory-mapped file of it and write to target process
+3. Write loader to target process
+4. Create remote thread to execute loader
+*/
+typedef
+HMODULE
+(WINAPI
+	*pLoadLibraryA)(
+		_In_ LPCSTR lpLibFileName
+		);
+
+typedef
+FARPROC
+(WINAPI
+	*pGetProcAddress)(
+		_In_ HMODULE hModule,
+		_In_ LPCSTR lpProcName
+		);
+
+typedef BOOL(WINAPI *pDllMain)(HMODULE hModule,
+	DWORD  ul_reason_for_call,
+	LPVOID lpReserved
+	);
+
+typedef struct _LOADER_PARAMS
+{
+	PVOID						ImageBase;
+	PIMAGE_NT_HEADERS			pNtHeaders;
+
+	PIMAGE_BASE_RELOCATION		pBaseRelocation;
+	PIMAGE_IMPORT_DESCRIPTOR	pImportDirectory;
+
+	pLoadLibraryA				fnLoadLibraryA;
+	pGetProcAddress				fnGetProcAddress;
+}LOADER_PARAMS, *PLOADER_PARAMS;
+
+DWORD WINAPI LibLoader(PVOID	Params)
+{
+	PLOADER_PARAMS LoaderParams = (PLOADER_PARAMS)Params;
+	PVOID pImageBase = LoaderParams->ImageBase;
+
+	PIMAGE_BASE_RELOCATION pBaseRelocation = LoaderParams->pBaseRelocation;
+	PIMAGE_IMPORT_DESCRIPTOR pImportDescriptor = LoaderParams->pImportDirectory;
+
+	ULONG_PTR delta = RELOC_DELTA(pImageBase); // Calculate the delta
+	while (pBaseRelocation->VirtualAddress &&
+		pBaseRelocation->SizeOfBlock >= sizeof(IMAGE_BASE_RELOCATION))
+	{
+		DWORD blockCount = RELOC_BLOCKS_COUNT(pBaseRelocation);
+		PWORD blockList = RELOC_BLOCKS(pBaseRelocation);
+		for (DWORD i = 0; i < blockCount; i++)
+		{
+			if (blockList[i])
+			{
+				/*PULONG_PTR ptr = (PULONG_PTR)( (LPBYTE)pImageBase + ( pBaseRelocation->VirtualAddress + ( blockList[i] & 0xFFF ) ) );*/
+				PULONG_PTR ptr = RELOC_POINTER(pImageBase, pBaseRelocation, i);
+				*ptr += delta;
+			}
+		}
+
+		// Go to next base-allocation block
+		pBaseRelocation = RELOC_NEXT_BASERELOC(pBaseRelocation);
+	}
+
+	// Resolve DLL imports
+	while (pImportDescriptor->Characteristics)
+	{
+		PIMAGE_THUNK_DATA OrigFirstThunk = (PIMAGE_THUNK_DATA)IMPORT_OFT(pImageBase, pImportDescriptor);
+		PIMAGE_THUNK_DATA FirstThunk = (PIMAGE_THUNK_DATA)IMPORT_FT(pImageBase, pImportDescriptor);
+
+		HMODULE hModule = LoaderParams->fnLoadLibraryA(IMPORT_NAME(pImageBase, pImportDescriptor));
+		if (!hModule)
+			return 5;
+
+		while (OrigFirstThunk->u1.AddressOfData)
+		{
+			if (OrigFirstThunk->u1.Ordinal & IMAGE_ORDINAL_FLAG)
+			{
+				// Import by ordinal
+				ULONG_PTR Function = (ULONG_PTR)LoaderParams->fnGetProcAddress(hModule,
+					(LPCSTR)(OrigFirstThunk->u1.Ordinal & 0xFFFF));
+				if (!Function)
+					return 1;
+
+				FirstThunk->u1.Function = Function;
+			}
+			else
+			{
+				// Import by name
+				ULONG_PTR Function = (ULONG_PTR)LoaderParams->fnGetProcAddress(hModule, IMPORT_FUNC_NAME(pImageBase, OrigFirstThunk));
+				if (!Function)
+					return 2;
+
+				FirstThunk->u1.Function = Function;
+			}
+			// Move to next import function
+			OrigFirstThunk = IMPORT_NEXT_THUNK(OrigFirstThunk);
+			FirstThunk = IMPORT_NEXT_THUNK(FirstThunk);
+		}
+		// Move to next import dll
+		pImportDescriptor = IMPORT_NEXT_DESCRIPTOR(pImportDescriptor);
+	}
+
+	if (LoaderParams->pNtHeaders->OptionalHeader.AddressOfEntryPoint)
+	{
+		pDllMain EntryPoint = (pDllMain)IMAGE_ENTRYPOINT(pImageBase);
+
+		if (EntryPoint((HMODULE)pImageBase, DLL_PROCESS_ATTACH, NULL)) // Call the entry point
+			return ERROR_SUCCESS;
+		else
+			return 3;
+	}
+
+	return 4;
+}
+
+// Stub function used to calculate loader's size
+DWORD WINAPI stubFunc()
+{
+	return 0;
+}
+
+BOOLEAN InjectTool::InjectManual() {
+	HANDLE hFile;
+	HANDLE hFileMap;
+	PVOID pMapAddress;
+	HANDLE hProcess;
+	PIMAGE_DOS_HEADER pDosHeader;
+	PIMAGE_NT_HEADERS pNtHeaders;
+	PIMAGE_SECTION_HEADER pSectHeader;
+	DWORD	imageSize;
+	ULONG_PTR	loaderSize;
+
+	LPVOID fnLoadLibraryA;
+	LPVOID fnGetProcAddress;
+
+	SIZE_T bytesWrite = 0;
+	PVOID remoteImageBase;
+	LOADER_PARAMS loaderParams = { 0 };
+
+	PVOID remoteLoaderAddress;
+	PVOID remoteParams;
+	HANDLE hRemoteThread;
+	DWORD exitCode;
+
+	//
+	// Validate dllpath and target process
+	//
+
+	hFile = CreateFile(m_TargetDll, GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, 0, NULL);
+	if (INVALID_HANDLE(hFile))	Helper::ErrorPop(_T("Open target dll failed."));
+
+	hFileMap = CreateFileMapping(hFile, NULL, PAGE_READONLY | SEC_IMAGE, 0, 0, NULL);
+	if (!hFileMap)	Helper::ErrorPop(_T("Create dll file mapping oject failed."));
+
+	pMapAddress = MapViewOfFileEx(hFileMap, FILE_MAP_READ, 0, 0, 0, (LPVOID)NULL);
+	if (!pMapAddress)	Helper::ErrorPop(_T("Map dll file failed."));
+
+	hProcess = OpenProcess(PROCESS_ALL_ACCESS, FALSE, m_TargetPid);
+	if (!hProcess)	Helper::ErrorPop(_T("Open target process failed."));
+
+	//
+	// Prepare injection parameters
+	//
+
+	pDosHeader = DOS_HEADER(pMapAddress);
+	pNtHeaders = NT_HEADERS(pMapAddress);
+	pSectHeader = SEC_HEADER(pMapAddress);
+	imageSize = IMAGE_SIZE(pMapAddress);
+	loaderSize =/* (ULONG_PTR)stubFunc - (ULONG_PTR)LibLoader*/1024 ;
+
+	fnLoadLibraryA = GetModuleFuncAddress("KERNEL32.DLL", "LoadLibraryA");
+	fnGetProcAddress = GetModuleFuncAddress("KERNEL32.DLL", "GetProcAddress");
+	if (!fnLoadLibraryA || !fnGetProcAddress)	Helper::ErrorPop(_T("Get loader function address failed."));
+
+	//
+	// Allocate memory for dll and loader in target process and write into it
+	//
+
+	remoteImageBase = VirtualAllocEx(hProcess, NULL, imageSize, MEM_RESERVE | MEM_COMMIT, PAGE_EXECUTE_READWRITE);
+	if (!remoteImageBase)	Helper::ErrorPop(_T("Allocate image space in target process failed."));
+
+	if (!WriteProcessMemory(hProcess, remoteImageBase, pMapAddress, imageSize, &bytesWrite) ||
+		bytesWrite < imageSize)
+		Helper::ErrorPop(_T("Write dll image to target proces failed."));
+
+	loaderParams.fnGetProcAddress = (pGetProcAddress)fnGetProcAddress;
+	loaderParams.fnLoadLibraryA = (pLoadLibraryA)fnLoadLibraryA;
+	loaderParams.pBaseRelocation = (PIMAGE_BASE_RELOCATION)REMOTE_DATA_DIRECTORY(remoteImageBase, pMapAddress, IMAGE_DIRECTORY_ENTRY_BASERELOC);
+	loaderParams.pImportDirectory = (PIMAGE_IMPORT_DESCRIPTOR)REMOTE_DATA_DIRECTORY(remoteImageBase, pMapAddress, IMAGE_DIRECTORY_ENTRY_IMPORT);
+	loaderParams.pNtHeaders = (PIMAGE_NT_HEADERS)OffsetToVA(remoteImageBase, pDosHeader->e_lfanew);
+	loaderParams.ImageBase = remoteImageBase;
+
+	// Allocate loader and its params together
+	remoteLoaderAddress = VirtualAllocEx(hProcess, NULL, loaderSize + sizeof(LOADER_PARAMS), MEM_RESERVE | MEM_COMMIT, PAGE_EXECUTE_READWRITE);
+	if (!remoteLoaderAddress)	Helper::ErrorPop(_T("Allocate loader space in target process failed."));
+	remoteParams = (PVOID)((ULONG_PTR)remoteLoaderAddress + loaderSize);
+
+	if (!WriteProcessMemory(hProcess, remoteLoaderAddress, LibLoader, loaderSize, &bytesWrite) ||
+		bytesWrite < loaderSize)
+		Helper::ErrorPop(_T("Write loader to target process failed."));
+	if (!WriteProcessMemory(hProcess, remoteParams, &loaderParams, sizeof(LOADER_PARAMS), &bytesWrite) ||
+		bytesWrite < sizeof(LOADER_PARAMS))
+		Helper::ErrorPop(_T("Write params to target process failed."));
+
+	hRemoteThread = CreateRemoteThread(hProcess, NULL, 0,
+		(LPTHREAD_START_ROUTINE)remoteLoaderAddress,
+		(LPVOID)remoteParams,
+		0, NULL);
+	if (!hRemoteThread)	Helper::ErrorPop(_T("Create remote loader failed."));
+
+	WaitForSingleObject(hRemoteThread, INFINITE);
+
+	if (!GetExitCodeThread(hRemoteThread, &exitCode) && GetLastError() != STILL_ACTIVE)
+		Helper::ErrorPop(_T("Get remote thread exit code failed."));
+
+	if (exitCode == ERROR_SUCCESS){}
+
+	VirtualFreeEx(hProcess, remoteLoaderAddress, 0, MEM_RELEASE);
 
 	return TRUE;
 }

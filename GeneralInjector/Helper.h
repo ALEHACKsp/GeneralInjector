@@ -2,7 +2,7 @@
 
 #include "stdafx.h"
 
-#define GetModuleFuncAddress(ModuleName, FuncName)	(LPVOID)(GetProcAddress(LoadLibrary(_T(ModuleName)), _T(FuncName)))
+#define GetModuleFuncAddress(ModuleName, FuncName)	(LPVOID)(GetProcAddress(LoadLibrary(_T(ModuleName)), FuncName))
 
 #define INVALID_HANDLE(handle)	(handle == INVALID_HANDLE_VALUE)
 #define OffsetToVA(address, offset)	((ULONG_PTR)(address) + (offset))
