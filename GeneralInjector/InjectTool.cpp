@@ -51,64 +51,54 @@ BOOLEAN InjectTool::Inject()
 
 BOOLEAN InjectTool::InjectCreateRemoteThread()
 {
-	HANDLE hProcess;
-	HANDLE hThread;
-	LPVOID llAddr;
-	LPVOID remotePath;
+	HANDLE hProcess = NULL;
+	HANDLE hThread = NULL;
+	LPVOID llAddr = NULL;
+	LPVOID remotePath = NULL;
 
 	LPCTSTR dllBuffer = m_TargetDll.GetBuffer();
 	DWORD dllBufferSize = (m_TargetDll.GetLength() + 1) * sizeof(TCHAR);
 	SIZE_T bytesRet;
-
-	hProcess = OpenProcess(PROCESS_ALL_ACCESS, FALSE, m_TargetPid);
-	if (!hProcess)
-	{
-		Helper::ErrorPop(_T("Error: Open injected process failed!"));
-		return FALSE;
-	}
-
-	// Get address of the function LoadLibraryA 
-	llAddr = (LPVOID)GetProcAddress(GetModuleHandle(_T("kernel32.dll")), LOAD_LIBRARY);
-	if (!llAddr)
-	{
-		Helper::ErrorPop(_T("Error: Get address of the LoadLibrary failed!"));
-		return FALSE;
-	}
-
-	//// Allocate new memory region inside the injected process's memory space
-	//// remotePath is the start address of the allocated memory
-	remotePath = VirtualAllocEx(hProcess, NULL, dllBufferSize, MEM_COMMIT, PAGE_READWRITE);
-	if (!remotePath)
-	{
-		Helper::ErrorPop(_T("Error: Cannot allocate memory region in the injected process!\n"));
-		return FALSE;
-	}
-
-	//// Write the remotePath of LoadLibrary to the process's newly allocated memory
-	if (!WriteProcessMemory(hProcess, remotePath, (LPVOID)dllBuffer, dllBufferSize, &bytesRet) ||
-		dllBufferSize > bytesRet)
-	{
-		Helper::ErrorPop(_T("Error: Cannot write the dllpath into the process's memory\n"));
-		return FALSE;
-	}
-
-	//// Inject dll into the tremotePathet process using CreateRemoteThread
-	hThread = CreateRemoteThread(hProcess, NULL, 0, (LPTHREAD_START_ROUTINE)llAddr, remotePath, NULL, NULL);
-	if (!hThread)
-	{
-		Helper::ErrorPop(_T("Error: Cannot create remote thread!\n"));
-		return FALSE;
-	}
-
-	WaitForSingleObject(hThread, INFINITE);
-
-	// Check if LoadLibrary executed correctly
 	DWORD exitCode = 0;
-	GetExitCodeThread(hThread, &exitCode);
+	DWORD error = ERROR_INJECT_SUCCESS;
 
-	CloseHandle(hThread);
-	CloseHandle(hProcess);
-	return (exitCode) ? TRUE : FALSE;
+	__try {
+		hProcess = OpenProcess(PROCESS_ALL_ACCESS, FALSE, m_TargetPid);
+		if (!hProcess)	ERROR_LEAVE(error, ERROR_OPEN_PROCESS);
+
+		// Get address of the function LoadLibraryA 
+		llAddr = (LPVOID)GetProcAddress(GetModuleHandle(_T("kernel32.dll")), LOAD_LIBRARY);
+		if (!llAddr)	ERROR_LEAVE(error, ERROR_GET_PROC_ADDRESS);
+
+		// Allocate new memory region inside the injected process's memory space
+		// remotePath is the start address of the allocated memory
+		remotePath = VirtualAllocEx(hProcess, NULL, dllBufferSize, MEM_COMMIT, PAGE_READWRITE);
+		if (!remotePath)	ERROR_LEAVE(error, ERROR_ALLOC_REMOTE_MEM);
+
+		//// Write the remotePath of LoadLibrary to the process's newly allocated memory
+		if (!WriteProcessMemory(hProcess, remotePath, (LPVOID)dllBuffer, dllBufferSize, &bytesRet) ||
+			dllBufferSize > bytesRet)
+			ERROR_LEAVE(error, ERROR_WRITE_REMOTE_MEM);
+
+		//// Inject dll into the tremotePathet process using CreateRemoteThread
+		hThread = CreateRemoteThread(hProcess, NULL, 0, (LPTHREAD_START_ROUTINE)llAddr, remotePath, NULL, NULL);
+		if (!hThread)	ERROR_LEAVE(error, ERROR_CREATE_REMOTE_THREAD);
+
+		WaitForSingleObject(hThread, INFINITE);
+
+		// Check if LoadLibrary executed correctly
+		GetExitCodeThread(hThread, &exitCode);
+		if (!exitCode)	error = ERROR_INJECT_FAILED;
+	}
+	__finally {
+		if (remotePath)	VirtualFreeEx(hProcess, remotePath, dllBufferSize, MEM_RELEASE);
+		if (hThread)	CloseHandle(hThread);
+		if (hProcess)	CloseHandle(hProcess);
+
+		ErrorFormat(error);
+	}
+
+	return (error == ERROR_INJECT_SUCCESS) ? TRUE : FALSE;
 }
 
 BYTE codeCave32[] = {
@@ -142,179 +132,141 @@ BYTE codeCave64[] = {
 #define codeCave codeCave32
 #endif
 
-BOOLEAN InjectTool::InjectThreadHijack()
-{
-	HANDLE hProcess;
-	HANDLE hThread;
-	LPVOID remoteWrapper;
-	LPVOID remoteDllPath;
+BOOLEAN InjectTool::InjectThreadHijack(){
+	DWORD error = ERROR_INJECT_SUCCESS;
+	HANDLE hProcess = NULL;
+	HANDLE hThread = NULL;
+	LPVOID remoteWrapper = NULL;
+	LPVOID remoteDllPath = NULL;
 	LPVOID loadLibraryAddress = NULL;
 	LPCTSTR dllBuffer = m_TargetDll.GetBuffer();
 	DWORD	dllBufferSize = (m_TargetDll.GetLength() + 1) * sizeof(TCHAR);
-
-	if (!(hProcess = OpenProcess(PROCESS_ALL_ACCESS, FALSE, m_TargetPid)))
-	{
-		Helper::ErrorPop(TEXT("Open injected process failed!\nExited."));
-		return FALSE;
-
-	}
-
-	if (!(remoteWrapper = VirtualAllocEx(hProcess, NULL,
-		sizeof(codeCave), MEM_COMMIT, PAGE_EXECUTE_READWRITE)))
-	{
-		Helper::ErrorPop(TEXT("Cannot allocate memory for remote wrapper!"));
-		return FALSE;
-	}
-
-	remoteDllPath = VirtualAllocEx(hProcess, NULL, dllBufferSize, MEM_COMMIT, PAGE_READWRITE);
-	if (!remoteDllPath)
-	{
-		Helper::ErrorPop(TEXT("Cannot allocate memory for output text!"));
-		return FALSE;
-	}
-
-	if (!WriteProcessMemory(hProcess, remoteDllPath, dllBuffer, dllBufferSize, NULL))
-	{
-		Helper::ErrorPop(TEXT("Cannot write  text to process memory!"));
-		return FALSE;
-	}
-
-	loadLibraryAddress = (LPVOID)GetProcAddress(LoadLibrary(_T("KERNEL32.DLL")), LOAD_LIBRARY);
-	if (!loadLibraryAddress)
-	{
-		Helper::ErrorPop(TEXT("Cannot find the address of function LoadLibraryA! "));
-		return FALSE;
-	}
-
-	hThread = OpenThread(THREAD_ALL_ACCESS, FALSE, m_TargetTid);
-	if (!hThread)
-	{
-		Helper::ErrorPop(TEXT("Open main thread of the remote process failed!"));
-		return FALSE;
-	}
-	if (SuspendThread(hThread) == -1)
-	{
-		Helper::ErrorPop(TEXT("Cannot suspend target thread"));
-		return FALSE;
-	}
-
 	CONTEXT context = { 0 };
-	context.ContextFlags = CONTEXT_CONTROL;
 
-	if (!GetThreadContext(hThread, &context))
-	{
-		Helper::ErrorPop(TEXT("Get thread context failed!"));
-		return FALSE;
-	}
+	__try {
+		hProcess = OpenProcess(PROCESS_ALL_ACCESS, FALSE, m_TargetPid);
+		if (!hProcess)	ERROR_LEAVE(error, ERROR_OPEN_PROCESS);
 
-	// COnstruct shellcode
+		remoteWrapper = VirtualAllocEx(hProcess, NULL,
+			sizeof(codeCave), MEM_COMMIT, PAGE_EXECUTE_READWRITE);
+		if (!remoteWrapper)	ERROR_LEAVE(error, ERROR_ALLOC_REMOTE_MEM);
+
+		remoteDllPath = VirtualAllocEx(hProcess, NULL, dllBufferSize, MEM_COMMIT, PAGE_READWRITE);
+		if (!remoteDllPath)	ERROR_LEAVE(error, ERROR_ALLOC_REMOTE_MEM);
+
+		if (!WriteProcessMemory(hProcess, remoteDllPath, dllBuffer, dllBufferSize, NULL))
+			ERROR_LEAVE(error, ERROR_WRITE_REMOTE_MEM);
+
+		loadLibraryAddress = (LPVOID)GetProcAddress(LoadLibrary(_T("KERNEL32.DLL")), LOAD_LIBRARY);
+		if (!loadLibraryAddress)	ERROR_LEAVE(error, ERROR_GET_PROC_ADDRESS);
+
+		hThread = OpenThread(THREAD_ALL_ACCESS, FALSE, m_TargetTid);
+		if (!hThread)	ERROR_LEAVE(error, ERROR_OPEN_THREAD);
+
+		if (SuspendThread(hThread) == -1)	ERROR_LEAVE(error, ERROR_SUSPEND_REMOTE_THREAD);
+
+		context.ContextFlags = CONTEXT_CONTROL;
+
+		if (!GetThreadContext(hThread, &context))	ERROR_LEAVE(error, ERROR_GET_THREAD_CONTEXT);
+
+		// COnstruct shellcode
 #ifndef _AMD64_
-	*(ULONG_PTR*)(codeCave + 3) = (ULONG_PTR)remoteDllPath;
-	*(ULONG_PTR*)(codeCave + 8) = (ULONG_PTR)loadLibraryAddress;
-	*(ULONG_PTR*)(codeCave + 17) = (ULONG_PTR)context.Eip;
+		*(ULONG_PTR*)(codeCave + 3) = (ULONG_PTR)remoteDllPath;
+		*(ULONG_PTR*)(codeCave + 8) = (ULONG_PTR)loadLibraryAddress;
+		*(ULONG_PTR*)(codeCave + 17) = (ULONG_PTR)context.Eip;
 
-	context.Eip = (DWORD)remoteWrapper;
+		context.Eip = (DWORD)remoteWrapper;
 #else	
-	*(ULONG_PTR*)(codeCave + 6) = (ULONG_PTR)remoteDllPath;
-	*(ULONG_PTR*)(codeCave + 16) = (ULONG_PTR)loadLibraryAddress;
-	*(ULONG_PTR*)(codeCave + 32) = (ULONG_PTR)context.Rip;
+		*(ULONG_PTR*)(codeCave + 6) = (ULONG_PTR)remoteDllPath;
+		*(ULONG_PTR*)(codeCave + 16) = (ULONG_PTR)loadLibraryAddress;
+		*(ULONG_PTR*)(codeCave + 32) = (ULONG_PTR)context.Rip;
 
-	context.Rip = (ULONG_PTR)remoteWrapper;
+		context.Rip = (ULONG_PTR)remoteWrapper;
 #endif
-	if (!WriteProcessMemory(hProcess, remoteWrapper,
-		(LPVOID)codeCave, sizeof(codeCave), NULL))
-	{
-		Helper::ErrorPop(TEXT("Cannot write wrapper to process memory!"));
-		return FALSE;
+		if (!WriteProcessMemory(hProcess, remoteWrapper, (LPVOID)codeCave, sizeof(codeCave), NULL))
+			ERROR_LEAVE(error, ERROR_WRITE_REMOTE_MEM);
+
+		if (!SetThreadContext(hThread, &context))
+			ERROR_LEAVE(error, ERROR_SET_THREAD_CONTEXT);
+	}
+	__finally {
+		if (context.ContextFlags)	ResumeThread(hThread);
+		if (hThread)	CloseHandle(hThread);
+		if (remoteDllPath)	VirtualFreeEx(hProcess, remoteDllPath, dllBufferSize, MEM_RELEASE);
+		if (remoteWrapper)	VirtualFreeEx(hProcess, remoteWrapper, sizeof(codeCave), MEM_RELEASE);
+		if (hProcess)	CloseHandle(hProcess);
+
+		ErrorFormat(error);
 	}
 
-	if (!SetThreadContext(hThread, &context))
-	{
-		Helper::ErrorPop(TEXT("Set thread context failed"));
-		return FALSE;
-
-	}
-	ResumeThread(hThread);
-
-	CloseHandle(hThread);
-	CloseHandle(hProcess);
-	return TRUE;
+	return (error == ERROR_INJECT_SUCCESS);
 }
 
-BOOLEAN InjectTool::InjectQueueUserApc()
-{
+BOOLEAN InjectTool::InjectQueueUserApc(){
+	HANDLE hProcess = NULL;
+	HANDLE hThread = NULL;
+	LPVOID loadLibraryAddress = NULL;
+	LPVOID remoteDllPath = NULL;
 	LPTSTR dllBuffer = m_TargetDll.GetBuffer();
 	DWORD dllBufferSize = (m_TargetDll.GetLength() + 1) * sizeof(TCHAR);
+	DWORD error = ERROR_INJECT_SUCCESS;
 
-	HANDLE hProcess = OpenProcess(PROCESS_ALL_ACCESS, FALSE, m_TargetPid);
-	if (!hProcess)
-	{
-		Helper::ErrorPop(_T("Get target process handle failed."));
-		return FALSE;
+	__try {
+		hProcess = OpenProcess(PROCESS_ALL_ACCESS, FALSE, m_TargetPid);
+		if (!hProcess)	ERROR_LEAVE(error, ERROR_OPEN_PROCESS);
+
+		hThread = OpenThread(THREAD_ALL_ACCESS, FALSE, m_TargetTid);
+		if (!hThread)	ERROR_LEAVE(error, ERROR_OPEN_THREAD);
+
+		loadLibraryAddress = GetProcAddress(GetModuleHandle(_T("kernel32.dll")), LOAD_LIBRARY);
+		if (!loadLibraryAddress)	ERROR_LEAVE(error, ERROR_GET_PROC_ADDRESS);
+
+		remoteDllPath = VirtualAllocEx(hProcess, NULL, dllBufferSize, MEM_COMMIT, PAGE_READWRITE);
+		if (!remoteDllPath)	ERROR_LEAVE(error, ERROR_ALLOC_REMOTE_MEM);
+
+		if (!WriteProcessMemory(hProcess, remoteDllPath, dllBuffer, dllBufferSize, NULL))
+			ERROR_LEAVE(error, ERROR_WRITE_REMOTE_MEM);
+
+		if (!QueueUserAPC((PAPCFUNC)loadLibraryAddress, hThread, (ULONG_PTR)remoteDllPath))
+			ERROR_LEAVE(error, ERROR_QUEUE_APC);
+
+		AfxMessageBox(_T("Note that target dll will be injected only after target thread entered ALERTABLE state!!"));
+	}
+	__finally {
+		if (remoteDllPath)	VirtualFreeEx(hProcess, remoteDllPath, dllBufferSize, MEM_RELEASE);
+		if (hThread)	CloseHandle(hThread);
+		if (hProcess)	CloseHandle(hProcess);
+
+		ErrorFormat(error);
 	}
 
-	HANDLE hThread = OpenThread(THREAD_ALL_ACCESS, FALSE, m_TargetTid);
-	if (!hThread)
-	{
-		Helper::ErrorPop(_T("Get target thread handle failed."));
-		return FALSE;
-	}
-
-	LPVOID loadLibraryAddress = GetProcAddress(GetModuleHandle(_T("kernel32.dll")), LOAD_LIBRARY);
-	if (!loadLibraryAddress)
-	{
-		Helper::ErrorPop(_T("Get LoadLibrary address failed."));
-		return FALSE;
-	}
-
-	LPVOID remoteDllPath = VirtualAllocEx(hProcess, NULL, dllBufferSize, MEM_COMMIT, PAGE_READWRITE);
-	if (!remoteDllPath)
-	{
-		Helper::ErrorPop(_T("Alloc remote dll path failed."));
-		return FALSE;
-	}
-
-	if (!WriteProcessMemory(hProcess, remoteDllPath, dllBuffer, dllBufferSize, NULL))
-	{
-		Helper::ErrorPop(_T("Cannot write dll path to target process."));
-		return FALSE;
-	}
-
-	if (!QueueUserAPC((PAPCFUNC)loadLibraryAddress, hThread, (ULONG_PTR)remoteDllPath))
-	{
-		Helper::ErrorPop(_T("QueueUserApc failed."));
-		return FALSE;
-	}
-
-	AfxMessageBox(_T("Note that target dll will be injected only after target thread entered ALERTABLE state!!"));
-	return TRUE;
+	return (error == ERROR_INJECT_SUCCESS);
 }
 
 //	Yon don't have to define a hook function in your DLL
 //	just a address which will not cause a access violation
 //	But better use a dummy hook for compatibility
-BOOLEAN InjectTool::InjectSetWndHook()
-{
-	HMODULE hTargetDll = LoadLibrary(m_TargetDll);
-	if (!hTargetDll)
-	{
-		Helper::ErrorPop(_T("Load target dll into injector failed.\n"));
-		return FALSE;
+BOOLEAN InjectTool::InjectSetWndHook(){
+	HMODULE hTargetDll = NULL;
+	DWORD error = ERROR_INJECT_SUCCESS;
+
+	__try {
+		hTargetDll = LoadLibrary(m_TargetDll);
+		if (!hTargetDll)	ERROR_LEAVE(error, ERROR_LOAD_MODULE);
+
+		HHOOK hHook = SetWindowsHookExA(WH_GETMESSAGE, (HOOKPROC)CallNextHookEx, hTargetDll, m_TargetTid);
+		if (!hHook)		ERROR_LEAVE(error, ERROR_INSTALL_WINDOWS_HOOK);
+
+		PostMessage(m_TargetWindow, WM_KEYDOWN, 'A', NULL);
+		PostMessage(m_TargetWindow, WM_KEYUP, 'A', NULL);
+	}
+	__finally {
+		if (hTargetDll)	FreeLibrary(hTargetDll);
+
+		ErrorFormat(error);
 	}
 
-	HHOOK hHook = SetWindowsHookExA(WH_GETMESSAGE, (HOOKPROC)CallNextHookEx, hTargetDll, m_TargetTid);
-	if (!hHook)
-	{
-		Helper::ErrorPop(_T("Install windows hook failed.\n"));
-		return FALSE;
-	}
-
-	PostMessage(m_TargetWindow, WM_KEYDOWN, 'A', NULL);
-	PostMessage(m_TargetWindow, WM_KEYUP, 'A', NULL);
-
-
-	return TRUE;
-
+	return error == ERROR_INJECT_SUCCESS;
 }
 
 /*
@@ -336,29 +288,17 @@ FILESUBTYPE 0xbL	(VFT2_DRV_INPUTMETHOD)
 #pragma comment(lib, "imm32.lib")
 #pragma warning(disable: 4311)
 #pragma warning(disable: 4302)
-static void RemoveImeRegistry(HKL hIme)
-{
+static void RemoveImeRegistry(HKL hIme){
 	HKEY hKey = 0;
 	DWORD valuesCount = 0;
 	TCHAR valueName[MAX_PATH] = { 0 };
 	DWORD valueNameSize = MAX_PATH;
 	TCHAR subKeyName[MAX_PATH] = { 0 };
 
-
-	if (ERROR_SUCCESS == RegOpenKeyEx(
-		HKEY_CURRENT_USER,
-		REG_CURRENT_USER_KBDLAYOUT,
-		0,
-		KEY_ALL_ACCESS,
-		&hKey)
-		)
-	{
-		if (ERROR_SUCCESS == RegQueryInfoKey(hKey, NULL, NULL, NULL, NULL, NULL, NULL, &valuesCount, NULL, NULL, NULL, NULL))
-		{
+	if (ERROR_SUCCESS == RegOpenKeyEx(HKEY_CURRENT_USER, REG_CURRENT_USER_KBDLAYOUT, 0, KEY_ALL_ACCESS, &hKey)) {
+		if (ERROR_SUCCESS == RegQueryInfoKey(hKey, NULL, NULL, NULL, NULL, NULL, NULL, &valuesCount, NULL, NULL, NULL, NULL)) {
 			if (ERROR_SUCCESS == RegEnumValue(hKey, valuesCount - 1, valueName, &valueNameSize, NULL, NULL, NULL, NULL))
-			{
 				RegDeleteValue(hKey, valueName);
-			}
 
 		}
 
@@ -369,25 +309,16 @@ static void RemoveImeRegistry(HKL hIme)
 	DWORD idx = 0;
 	DWORD keyIme = 0;
 
-	if (ERROR_SUCCESS == RegOpenKeyEx(
-		HKEY_LOCAL_MACHINE,
-		REG_LOCAL_MACHINE_KBDLAYOUT,
-		0, KEY_ALL_ACCESS, &hKey))
-	{
-		while (RegEnumKey(hKey, idx++, subKeyName, MAX_PATH) == ERROR_SUCCESS)
-		{
+	if (ERROR_SUCCESS == RegOpenKeyEx(HKEY_LOCAL_MACHINE, REG_LOCAL_MACHINE_KBDLAYOUT, 0, KEY_ALL_ACCESS, &hKey)) {
+		while (RegEnumKey(hKey, idx++, subKeyName, MAX_PATH) == ERROR_SUCCESS) {
 			keyIme = _tcstoul(subKeyName, NULL, 16);
 
-			if (keyIme == (DWORD)hIme)
-			{
-				if (ERROR_SUCCESS == RegDeleteKey(hKey, subKeyName))
-				{
+			if (keyIme == (DWORD)hIme) {
+				if (ERROR_SUCCESS == RegDeleteKey(hKey, subKeyName)) {
 					RegCloseKey(hKey);
 					break;
 				}
-
 			}
-
 		}
 	}
 }
@@ -395,46 +326,46 @@ static void RemoveImeRegistry(HKL hIme)
 #pragma warning(default: 4311)
 
 
-BOOLEAN InjectTool::InjectIME()
-{
+BOOLEAN InjectTool::InjectIME(){
+	DWORD error = ERROR_INJECT_SUCCESS;
 	TCHAR	sysDir[MAX_PATH] = { 0 };
 	TCHAR	imePath[MAX_PATH] = { 0 };
+	HKL hIME = NULL;
+	HKL	oldIme = 0;
+	BOOLEAN isFileCopy = FALSE;
 
 	SHGetSpecialFolderPath(0, sysDir, CSIDL_SYSTEM, FALSE);
 
-	StringCbPrintf(imePath, MAX_PATH, _T("%s\\%s"), sysDir, IME_NAME);
+	__try {
+		StringCbPrintf(imePath, MAX_PATH, _T("%s\\%s"), sysDir, IME_NAME);
+		if (!CopyFile(m_TargetDll, imePath, FALSE))	ERROR_LEAVE(error, ERROR_COPY_IME);
+		isFileCopy = TRUE;
 
-	if (!CopyFile(m_TargetDll, imePath, FALSE))
-	{
-		Helper::ErrorPop(_T("Copy target dll to system folder failed."));
-		return FALSE;
+		hIME = ImmInstallIME(imePath, IME_NAME);
+		if (!hIME)	ERROR_LEAVE(error, ERROR_INSTALL_IME);
+
+		// Backup default ime
+		SystemParametersInfo(SPI_GETDEFAULTINPUTLANG, 0, &oldIme, 0);
+
+		PostMessage(m_TargetWindow, WM_INPUTLANGCHANGEREQUEST, INPUTLANGCHANGE_SYSCHARSET, (LPARAM)hIME);
+		PostMessage(m_TargetWindow, WM_INPUTLANGCHANGE, 0, (LPARAM)hIME);
+
+	}
+	__finally {
+		// Remove inject ime from system after injection
+		if (hIME) {
+			if (!UnloadKeyboardLayout(hIME))
+				AfxMessageBox(_T("Unload keyboard layout of inject IME failed."), MB_OK | MB_ICONWARNING);
+
+			RemoveImeRegistry(hIME);
+		}
+
+		if (isFileCopy)
+			if (!DeleteFile(imePath))
+				AfxMessageBox(_T("Delete temp ime file failed. Please delete it manually."), MB_OK | MB_ICONWARNING);
 	}
 
-	HKL hIME = ImmInstallIME(imePath, IME_NAME);
-	if (!hIME) {
-		Helper::ErrorPop(_T("Install inject ime failed."));
-		return FALSE;
-	}
-
-	// Backup default ime
-	HKL	oldIme = 0;
-	SystemParametersInfo(SPI_GETDEFAULTINPUTLANG, 0, &oldIme, 0);
-
-	PostMessage(m_TargetWindow, WM_INPUTLANGCHANGEREQUEST, INPUTLANGCHANGE_SYSCHARSET, (LPARAM)hIME);
-	PostMessage(m_TargetWindow, WM_INPUTLANGCHANGE, 0, (LPARAM)hIME);
-
-	// Remove inject ime from system after injection
-	if (!UnloadKeyboardLayout(hIME)) {
-		Helper::ErrorPop(_T("Unload inject IME failed."));
-		return FALSE;
-	}
-
-	RemoveImeRegistry(hIME);
-
-	if (!DeleteFile(imePath))
-		AfxMessageBox(_T("Delete temp ime file failed. Please delete it manually."), MB_OK | MB_ICONWARNING);
-
-	return TRUE;
+	return error == ERROR_INJECT_SUCCESS;
 }
 
 /*
@@ -483,8 +414,7 @@ typedef struct _LOADER_PARAMS
 	pGetProcAddress				fnGetProcAddress;
 }LOADER_PARAMS, *PLOADER_PARAMS;
 
-DWORD WINAPI LibLoader(PVOID	Params)
-{
+DWORD WINAPI LibLoader(PVOID	Params) {
 	PLOADER_PARAMS LoaderParams = (PLOADER_PARAMS)Params;
 	PVOID pImageBase = LoaderParams->ImageBase;
 
@@ -493,14 +423,11 @@ DWORD WINAPI LibLoader(PVOID	Params)
 
 	ULONG_PTR delta = RELOC_DELTA(pImageBase); // Calculate the delta
 	while (pBaseRelocation->VirtualAddress &&
-		pBaseRelocation->SizeOfBlock >= sizeof(IMAGE_BASE_RELOCATION))
-	{
+		pBaseRelocation->SizeOfBlock >= sizeof(IMAGE_BASE_RELOCATION)) {
 		DWORD blockCount = RELOC_BLOCKS_COUNT(pBaseRelocation);
 		PWORD blockList = RELOC_BLOCKS(pBaseRelocation);
-		for (DWORD i = 0; i < blockCount; i++)
-		{
-			if (blockList[i])
-			{
+		for (DWORD i = 0; i < blockCount; i++) {
+			if (blockList[i]) {
 				/*PULONG_PTR ptr = (PULONG_PTR)( (LPBYTE)pImageBase + ( pBaseRelocation->VirtualAddress + ( blockList[i] & 0xFFF ) ) );*/
 				PULONG_PTR ptr = RELOC_POINTER(pImageBase, pBaseRelocation, i);
 				*ptr += delta;
@@ -512,8 +439,7 @@ DWORD WINAPI LibLoader(PVOID	Params)
 	}
 
 	// Resolve DLL imports
-	while (pImportDescriptor->Characteristics)
-	{
+	while (pImportDescriptor->Characteristics) {
 		PIMAGE_THUNK_DATA OrigFirstThunk = (PIMAGE_THUNK_DATA)IMPORT_OFT(pImageBase, pImportDescriptor);
 		PIMAGE_THUNK_DATA FirstThunk = (PIMAGE_THUNK_DATA)IMPORT_FT(pImageBase, pImportDescriptor);
 
@@ -521,10 +447,8 @@ DWORD WINAPI LibLoader(PVOID	Params)
 		if (!hModule)
 			return 5;
 
-		while (OrigFirstThunk->u1.AddressOfData)
-		{
-			if (OrigFirstThunk->u1.Ordinal & IMAGE_ORDINAL_FLAG)
-			{
+		while (OrigFirstThunk->u1.AddressOfData) {
+			if (OrigFirstThunk->u1.Ordinal & IMAGE_ORDINAL_FLAG) {
 				// Import by ordinal
 				ULONG_PTR Function = (ULONG_PTR)LoaderParams->fnGetProcAddress(hModule,
 					(LPCSTR)(OrigFirstThunk->u1.Ordinal & 0xFFFF));
@@ -533,8 +457,7 @@ DWORD WINAPI LibLoader(PVOID	Params)
 
 				FirstThunk->u1.Function = Function;
 			}
-			else
-			{
+			else {
 				// Import by name
 				ULONG_PTR Function = (ULONG_PTR)LoaderParams->fnGetProcAddress(hModule, IMPORT_FUNC_NAME(pImageBase, OrigFirstThunk));
 				if (!Function)
@@ -550,8 +473,7 @@ DWORD WINAPI LibLoader(PVOID	Params)
 		pImportDescriptor = IMPORT_NEXT_DESCRIPTOR(pImportDescriptor);
 	}
 
-	if (LoaderParams->pNtHeaders->OptionalHeader.AddressOfEntryPoint)
-	{
+	if (LoaderParams->pNtHeaders->OptionalHeader.AddressOfEntryPoint) {
 		pDllMain EntryPoint = (pDllMain)IMAGE_ENTRYPOINT(pImageBase);
 
 		if (EntryPoint((HMODULE)pImageBase, DLL_PROCESS_ATTACH, NULL)) // Call the entry point
@@ -570,10 +492,10 @@ DWORD WINAPI stubFunc()
 }
 
 BOOLEAN InjectTool::InjectManual() {
-	HANDLE hFile;
-	HANDLE hFileMap;
-	PVOID pMapAddress;
-	HANDLE hProcess;
+	HANDLE hFile = NULL;
+	HANDLE hFileMap = NULL;
+	PVOID pMapAddress = NULL;
+	HANDLE hProcess = NULL;
 	PIMAGE_DOS_HEADER pDosHeader;
 	PIMAGE_NT_HEADERS pNtHeaders;
 	PIMAGE_SECTION_HEADER pSectHeader;
@@ -584,88 +506,158 @@ BOOLEAN InjectTool::InjectManual() {
 	LPVOID fnGetProcAddress;
 
 	SIZE_T bytesWrite = 0;
-	PVOID remoteImageBase;
+	PVOID remoteImageBase = NULL;
 	LOADER_PARAMS loaderParams = { 0 };
 
-	PVOID remoteLoaderAddress;
-	PVOID remoteParams;
-	HANDLE hRemoteThread;
-	DWORD exitCode;
+	PVOID remoteLoaderAddress = NULL;
+	PVOID remoteParams = NULL;
+	HANDLE hRemoteThread = NULL;
+	DWORD exitCode = 0;
+	DWORD error = ERROR_INJECT_SUCCESS;
 
-	//
-	// Validate dllpath and target process
-	//
 
-	hFile = CreateFile(m_TargetDll, GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, 0, NULL);
-	if (INVALID_HANDLE(hFile))	Helper::ErrorPop(_T("Open target dll failed."));
+	__try {
+		hFile = CreateFile(m_TargetDll, GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, 0, NULL);
+		if (INVALID_HANDLE(hFile))	ERROR_LEAVE(error, ERROR_OPEN_DLL_FILE);
 
-	hFileMap = CreateFileMapping(hFile, NULL, PAGE_READONLY | SEC_IMAGE, 0, 0, NULL);
-	if (!hFileMap)	Helper::ErrorPop(_T("Create dll file mapping oject failed."));
+		hFileMap = CreateFileMapping(hFile, NULL, PAGE_READONLY | SEC_IMAGE, 0, 0, NULL);
+		if (!hFileMap)	ERROR_LEAVE(error, ERROR_CREATE_FILE_MAPPING);
 
-	pMapAddress = MapViewOfFileEx(hFileMap, FILE_MAP_READ, 0, 0, 0, (LPVOID)NULL);
-	if (!pMapAddress)	Helper::ErrorPop(_T("Map dll file failed."));
+		pMapAddress = MapViewOfFileEx(hFileMap, FILE_MAP_READ, 0, 0, 0, (LPVOID)NULL);
+		if (!pMapAddress)	ERROR_LEAVE(error, ERROR_MAP_DLL);
 
-	hProcess = OpenProcess(PROCESS_ALL_ACCESS, FALSE, m_TargetPid);
-	if (!hProcess)	Helper::ErrorPop(_T("Open target process failed."));
+		hProcess = OpenProcess(PROCESS_ALL_ACCESS, FALSE, m_TargetPid);
+		if (!hProcess)	ERROR_LEAVE(error, ERROR_OPEN_PROCESS);
 
-	//
-	// Prepare injection parameters
-	//
+		//
+		// Prepare injection parameters
+		//
 
-	pDosHeader = DOS_HEADER(pMapAddress);
-	pNtHeaders = NT_HEADERS(pMapAddress);
-	pSectHeader = SEC_HEADER(pMapAddress);
-	imageSize = IMAGE_SIZE(pMapAddress);
-	loaderSize =/* (ULONG_PTR)stubFunc - (ULONG_PTR)LibLoader*/1024 ;
+		pDosHeader = DOS_HEADER(pMapAddress);
+		pNtHeaders = NT_HEADERS(pMapAddress);
+		pSectHeader = SEC_HEADER(pMapAddress);
+		imageSize = IMAGE_SIZE(pMapAddress);
+		loaderSize =/* (ULONG_PTR)stubFunc - (ULONG_PTR)LibLoader*/1024;
 
-	fnLoadLibraryA = GetModuleFuncAddress("KERNEL32.DLL", "LoadLibraryA");
-	fnGetProcAddress = GetModuleFuncAddress("KERNEL32.DLL", "GetProcAddress");
-	if (!fnLoadLibraryA || !fnGetProcAddress)	Helper::ErrorPop(_T("Get loader function address failed."));
+		fnLoadLibraryA = GetModuleFuncAddress("KERNEL32.DLL", "LoadLibraryA");
+		fnGetProcAddress = GetModuleFuncAddress("KERNEL32.DLL", "GetProcAddress");
+		if (!fnLoadLibraryA || !fnGetProcAddress)	ERROR_LEAVE(error, ERROR_GET_PROC_ADDRESS);
 
-	//
-	// Allocate memory for dll and loader in target process and write into it
-	//
+		//
+		// Allocate memory for dll and loader in target process and write into it
+		//
 
-	remoteImageBase = VirtualAllocEx(hProcess, NULL, imageSize, MEM_RESERVE | MEM_COMMIT, PAGE_EXECUTE_READWRITE);
-	if (!remoteImageBase)	Helper::ErrorPop(_T("Allocate image space in target process failed."));
+		remoteImageBase = VirtualAllocEx(hProcess, NULL, imageSize, MEM_RESERVE | MEM_COMMIT, PAGE_EXECUTE_READWRITE);
+		if (!remoteImageBase)	ERROR_LEAVE(error, ERROR_ALLOC_REMOTE_MEM);
 
-	if (!WriteProcessMemory(hProcess, remoteImageBase, pMapAddress, imageSize, &bytesWrite) ||
-		bytesWrite < imageSize)
-		Helper::ErrorPop(_T("Write dll image to target proces failed."));
+		if (!WriteProcessMemory(hProcess, remoteImageBase, pMapAddress, imageSize, &bytesWrite) ||
+			bytesWrite < imageSize)
+			ERROR_LEAVE(error, ERROR_WRITE_REMOTE_MEM);
 
-	loaderParams.fnGetProcAddress = (pGetProcAddress)fnGetProcAddress;
-	loaderParams.fnLoadLibraryA = (pLoadLibraryA)fnLoadLibraryA;
-	loaderParams.pBaseRelocation = (PIMAGE_BASE_RELOCATION)REMOTE_DATA_DIRECTORY(remoteImageBase, pMapAddress, IMAGE_DIRECTORY_ENTRY_BASERELOC);
-	loaderParams.pImportDirectory = (PIMAGE_IMPORT_DESCRIPTOR)REMOTE_DATA_DIRECTORY(remoteImageBase, pMapAddress, IMAGE_DIRECTORY_ENTRY_IMPORT);
-	loaderParams.pNtHeaders = (PIMAGE_NT_HEADERS)OffsetToVA(remoteImageBase, pDosHeader->e_lfanew);
-	loaderParams.ImageBase = remoteImageBase;
+		loaderParams.fnGetProcAddress = (pGetProcAddress)fnGetProcAddress;
+		loaderParams.fnLoadLibraryA = (pLoadLibraryA)fnLoadLibraryA;
+		loaderParams.pBaseRelocation = (PIMAGE_BASE_RELOCATION)REMOTE_DATA_DIRECTORY(remoteImageBase, pMapAddress, IMAGE_DIRECTORY_ENTRY_BASERELOC);
+		loaderParams.pImportDirectory = (PIMAGE_IMPORT_DESCRIPTOR)REMOTE_DATA_DIRECTORY(remoteImageBase, pMapAddress, IMAGE_DIRECTORY_ENTRY_IMPORT);
+		loaderParams.pNtHeaders = (PIMAGE_NT_HEADERS)OffsetToVA(remoteImageBase, pDosHeader->e_lfanew);
+		loaderParams.ImageBase = remoteImageBase;
 
-	// Allocate loader and its params together
-	remoteLoaderAddress = VirtualAllocEx(hProcess, NULL, loaderSize + sizeof(LOADER_PARAMS), MEM_RESERVE | MEM_COMMIT, PAGE_EXECUTE_READWRITE);
-	if (!remoteLoaderAddress)	Helper::ErrorPop(_T("Allocate loader space in target process failed."));
-	remoteParams = (PVOID)((ULONG_PTR)remoteLoaderAddress + loaderSize);
+		// Allocate loader and its params together
+		remoteLoaderAddress = VirtualAllocEx(hProcess, NULL, loaderSize + sizeof(LOADER_PARAMS), MEM_RESERVE | MEM_COMMIT, PAGE_EXECUTE_READWRITE);
+		if (!remoteLoaderAddress)	ERROR_LEAVE(error, ERROR_ALLOC_REMOTE_MEM);
 
-	if (!WriteProcessMemory(hProcess, remoteLoaderAddress, LibLoader, loaderSize, &bytesWrite) ||
-		bytesWrite < loaderSize)
-		Helper::ErrorPop(_T("Write loader to target process failed."));
-	if (!WriteProcessMemory(hProcess, remoteParams, &loaderParams, sizeof(LOADER_PARAMS), &bytesWrite) ||
-		bytesWrite < sizeof(LOADER_PARAMS))
-		Helper::ErrorPop(_T("Write params to target process failed."));
+		remoteParams = (PVOID)((ULONG_PTR)remoteLoaderAddress + loaderSize);
 
-	hRemoteThread = CreateRemoteThread(hProcess, NULL, 0,
-		(LPTHREAD_START_ROUTINE)remoteLoaderAddress,
-		(LPVOID)remoteParams,
-		0, NULL);
-	if (!hRemoteThread)	Helper::ErrorPop(_T("Create remote loader failed."));
+		if (!WriteProcessMemory(hProcess, remoteLoaderAddress, LibLoader, loaderSize, &bytesWrite) ||
+			bytesWrite < loaderSize)
+			ERROR_LEAVE(error, ERROR_WRITE_REMOTE_MEM);
+		if (!WriteProcessMemory(hProcess, remoteParams, &loaderParams, sizeof(LOADER_PARAMS), &bytesWrite) ||
+			bytesWrite < sizeof(LOADER_PARAMS))
+			ERROR_LEAVE(error, ERROR_WRITE_REMOTE_MEM);
 
-	WaitForSingleObject(hRemoteThread, INFINITE);
+		hRemoteThread = CreateRemoteThread(hProcess, NULL, 0,
+			(LPTHREAD_START_ROUTINE)remoteLoaderAddress,
+			(LPVOID)remoteParams,
+			0, NULL);
+		if (!hRemoteThread)	ERROR_LEAVE(error, ERROR_CREATE_REMOTE_THREAD);
 
-	if (!GetExitCodeThread(hRemoteThread, &exitCode) && GetLastError() != STILL_ACTIVE)
-		Helper::ErrorPop(_T("Get remote thread exit code failed."));
+		WaitForSingleObject(hRemoteThread, INFINITE);
 
-	if (exitCode == ERROR_SUCCESS){}
+		if (!GetExitCodeThread(hRemoteThread, &exitCode) && GetLastError() != STILL_ACTIVE)
+			error = ERROR_INJECT_FAILED;
 
-	VirtualFreeEx(hProcess, remoteLoaderAddress, 0, MEM_RELEASE);
+	}
+	__finally {
+		if (hRemoteThread)	CloseHandle(hRemoteThread);
+		if (remoteLoaderAddress)	VirtualFreeEx(hProcess, remoteLoaderAddress, loaderSize + sizeof(LOADER_PARAMS), MEM_RELEASE);
+		if (remoteImageBase)	VirtualFreeEx(hProcess, remoteImageBase, imageSize, MEM_RELEASE);
+		if (hProcess)		CloseHandle(hProcess);
+		if (pMapAddress)	UnmapViewOfFile(pMapAddress);
+		if (hFileMap)		CloseHandle(hFileMap);
+		if (hFile)			CloseHandle(hFile);
 
-	return TRUE;
+		ErrorFormat(error);
+	}
+	
+	return error == ERROR_INJECT_SUCCESS;
+}
+
+void InjectTool::ErrorFormat(DWORD ErrorCode)
+{
+	switch (ErrorCode)
+	{
+	case ERROR_OPEN_PROCESS:
+		Helper::ErrorPop(_T("Error: Open injected process failed!"));
+		break;
+	case ERROR_OPEN_THREAD:
+		Helper::ErrorPop(TEXT("Open main thread of the remote process failed!"));
+		break;
+	case ERROR_LOAD_MODULE:
+		Helper::ErrorPop(_T("Load target dll into injector failed."));
+		break;
+	case ERROR_INSTALL_WINDOWS_HOOK:
+		Helper::ErrorPop(_T("Install windows hook failed.\n"));
+		break;
+	case ERROR_GET_PROC_ADDRESS:
+		Helper::ErrorPop(_T("Error: Get address of the LoadLibrary failed!"));
+		break;
+	case ERROR_ALLOC_REMOTE_MEM:
+		Helper::ErrorPop(_T("Error: Cannot allocate memory region in the injected process!\n"));
+		break;
+	case ERROR_WRITE_REMOTE_MEM:
+		Helper::ErrorPop(_T("Error: Cannot write the dllpath into the process's memory\n"));
+		break;
+	case ERROR_CREATE_REMOTE_THREAD:
+		Helper::ErrorPop(_T("Error: Cannot create remote thread!\n"));
+		break;
+	case ERROR_SUSPEND_REMOTE_THREAD:
+		Helper::ErrorPop(TEXT("Cannot suspend target thread"));
+		break;
+	case ERROR_GET_THREAD_CONTEXT:
+		Helper::ErrorPop(TEXT("Get target thread context failed!"));
+		break;
+	case ERROR_SET_THREAD_CONTEXT:
+		Helper::ErrorPop(TEXT("Set target thread context failed"));
+		break;
+	case ERROR_QUEUE_APC:
+		Helper::ErrorPop(_T("Queue Apc to target thread failed."));
+		break;
+	case ERROR_COPY_IME:
+		Helper::ErrorPop(_T("Copy target dll to system folder failed."));
+		break;
+	case ERROR_INSTALL_IME:
+		Helper::ErrorPop(_T("Install inject ime failed."));
+		break;
+	case ERROR_OPEN_DLL_FILE:
+		Helper::ErrorPop(_T("Open target dll failed."));
+		break;
+	case ERROR_CREATE_FILE_MAPPING:
+		Helper::ErrorPop(_T("Create dll file mapping oject failed."));
+		break;
+	case ERROR_MAP_DLL:
+		Helper::ErrorPop(_T("Map dll file failed."));
+		break;
+
+	default:
+		break;
+	}
 }
