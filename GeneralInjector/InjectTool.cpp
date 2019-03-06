@@ -132,7 +132,8 @@ BYTE codeCave64[] = {
 #define codeCave codeCave32
 #endif
 
-BOOLEAN InjectTool::InjectThreadHijack(){
+BOOLEAN InjectTool::InjectThreadHijack()
+{
 	DWORD error = ERROR_INJECT_SUCCESS;
 	HANDLE hProcess = NULL;
 	HANDLE hThread = NULL;
@@ -202,7 +203,8 @@ BOOLEAN InjectTool::InjectThreadHijack(){
 	return (error == ERROR_INJECT_SUCCESS);
 }
 
-BOOLEAN InjectTool::InjectQueueUserApc(){
+BOOLEAN InjectTool::InjectQueueUserApc()
+{
 	HANDLE hProcess = NULL;
 	HANDLE hThread = NULL;
 	LPVOID loadLibraryAddress = NULL;
@@ -246,7 +248,8 @@ BOOLEAN InjectTool::InjectQueueUserApc(){
 //	Yon don't have to define a hook function in your DLL
 //	just a address which will not cause a access violation
 //	But better use a dummy hook for compatibility
-BOOLEAN InjectTool::InjectSetWndHook(){
+BOOLEAN InjectTool::InjectSetWndHook()
+{
 	HMODULE hTargetDll = NULL;
 	DWORD error = ERROR_INJECT_SUCCESS;
 
@@ -288,7 +291,8 @@ FILESUBTYPE 0xbL	(VFT2_DRV_INPUTMETHOD)
 #pragma comment(lib, "imm32.lib")
 #pragma warning(disable: 4311)
 #pragma warning(disable: 4302)
-static void RemoveImeRegistry(HKL hIme){
+static void RemoveImeRegistry(HKL hIme)
+{
 	HKEY hKey = 0;
 	DWORD valuesCount = 0;
 	TCHAR valueName[MAX_PATH] = { 0 };
@@ -326,7 +330,8 @@ static void RemoveImeRegistry(HKL hIme){
 #pragma warning(default: 4311)
 
 
-BOOLEAN InjectTool::InjectIME(){
+BOOLEAN InjectTool::InjectIME()
+{
 	DWORD error = ERROR_INJECT_SUCCESS;
 	TCHAR	sysDir[MAX_PATH] = { 0 };
 	TCHAR	imePath[MAX_PATH] = { 0 };
