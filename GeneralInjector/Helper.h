@@ -1,6 +1,7 @@
 #pragma once
 
 #include "stdafx.h"
+#include "PEHelper.h"
 
 #define GetModuleFuncAddress(ModuleName, FuncName)	(LPVOID)(GetProcAddress(LoadLibrary(_T(ModuleName)), FuncName))
 
@@ -39,70 +40,69 @@
 #define IMPORT_NEXT_THUNK(pThunk)	((PIMAGE_THUNK_DATA)(OffsetToVA(pThunk, sizeof(IMAGE_THUNK_DATA))))
 #define IMPORT_NEXT_DESCRIPTOR(pID)	((PIMAGE_IMPORT_DESCRIPTOR)(OffsetToVA(pID, sizeof(IMAGE_IMPORT_DESCRIPTOR))))
 
-//
-// PE inline helper functions (versus macros)
-//
-PIMAGE_DOS_HEADER inline GetImageDosHeader( PVOID ImageBase ) { return (PIMAGE_DOS_HEADER)ImageBase; }
+	//
+	// PE inline helper functions (versus macros)
+	//
+PIMAGE_DOS_HEADER inline GetImageDosHeader(PVOID ImageBase) { return (PIMAGE_DOS_HEADER)ImageBase; }
 PIMAGE_NT_HEADERS inline GetImageNtHeader(PVOID ImageBase) {
-	return (PIMAGE_NT_HEADERS)( (ULONG_PTR)ImageBase + ( (PIMAGE_DOS_HEADER)ImageBase )->e_lfanew );
+	return (PIMAGE_NT_HEADERS)((ULONG_PTR)ImageBase + ((PIMAGE_DOS_HEADER)ImageBase)->e_lfanew);
 }
-PIMAGE_SECTION_HEADER inline GetImageSecHeader( PVOID ImageBase ) {
-	PIMAGE_NT_HEADERS nt = GetImageNtHeader( ImageBase );
-	return (PIMAGE_SECTION_HEADER)( (ULONG_PTR)nt + nt->OptionalHeader.SizeOfHeaders);
+PIMAGE_SECTION_HEADER inline GetImageSecHeader(PVOID ImageBase) {
+	PIMAGE_NT_HEADERS nt = GetImageNtHeader(ImageBase);
+	return (PIMAGE_SECTION_HEADER)((ULONG_PTR)nt + nt->OptionalHeader.SizeOfHeaders);
 }
-ULONG_PTR inline GetImageSize( PVOID ImageBase ) {
-	return GetImageNtHeader( ImageBase )->OptionalHeader.SizeOfImage;
+ULONG_PTR inline GetImageSize(PVOID ImageBase) {
+	return GetImageNtHeader(ImageBase)->OptionalHeader.SizeOfImage;
 }
-ULONG_PTR inline GetImageBase( PVOID ImageBase ) {
-	return GetImageNtHeader( ImageBase )->OptionalHeader.ImageBase;
+ULONG_PTR inline GetImageBase(PVOID ImageBase) {
+	return GetImageNtHeader(ImageBase)->OptionalHeader.ImageBase;
 }
-ULONG_PTR inline GetImageEntryPoint( PVOID ImageBase ) {
-	return  (ULONG_PTR)ImageBase + GetImageNtHeader( ImageBase )->OptionalHeader.AddressOfEntryPoint ;
+ULONG_PTR inline GetImageEntryPoint(PVOID ImageBase) {
+	return  (ULONG_PTR)ImageBase + GetImageNtHeader(ImageBase)->OptionalHeader.AddressOfEntryPoint;
 }
-ULONG_PTR inline GetImageDirectoryEntryRva( PVOID ImageBase, ULONG Index ) {
-	return GetImageNtHeader( ImageBase )->OptionalHeader.DataDirectory[Index].VirtualAddress;
+ULONG_PTR inline GetImageDirectoryEntryRva(PVOID ImageBase, ULONG Index) {
+	return GetImageNtHeader(ImageBase)->OptionalHeader.DataDirectory[Index].VirtualAddress;
 }
-ULONG_PTR inline GetImageDirectoryEntryVa( PVOID ImageBase, ULONG Index ) {
-	return (ULONG_PTR)ImageBase + GetImageDirectoryEntryRva( ImageBase, Index );
+ULONG_PTR inline GetImageDirectoryEntryVa(PVOID ImageBase, ULONG Index) {
+	return (ULONG_PTR)ImageBase + GetImageDirectoryEntryRva(ImageBase, Index);
 }
 // Relocation
-PIMAGE_BASE_RELOCATION inline GetImageRelocBase( PVOID ImageBase ) {
-	return (PIMAGE_BASE_RELOCATION)GetImageDirectoryEntryVa( ImageBase, IMAGE_DIRECTORY_ENTRY_BASERELOC );
+PIMAGE_BASE_RELOCATION inline GetImageRelocBase(PVOID ImageBase) {
+	return (PIMAGE_BASE_RELOCATION)GetImageDirectoryEntryVa(ImageBase, IMAGE_DIRECTORY_ENTRY_BASERELOC);
 }
-PIMAGE_BASE_RELOCATION inline GetImageNextRelocBase( PIMAGE_BASE_RELOCATION RelocBase ) {
-	return (PIMAGE_BASE_RELOCATION)( (ULONG_PTR)RelocBase + RelocBase->SizeOfBlock );
+PIMAGE_BASE_RELOCATION inline GetImageNextRelocBase(PIMAGE_BASE_RELOCATION RelocBase) {
+	return (PIMAGE_BASE_RELOCATION)((ULONG_PTR)RelocBase + RelocBase->SizeOfBlock);
 }
-ULONG inline GetImageRelocBlockCount( PIMAGE_BASE_RELOCATION RelocBase ) {
-	return ( RelocBase->SizeOfBlock - sizeof( IMAGE_BASE_RELOCATION ) ) / sizeof( WORD );
+ULONG inline GetImageRelocBlockCount(PIMAGE_BASE_RELOCATION RelocBase) {
+	return (RelocBase->SizeOfBlock - sizeof(IMAGE_BASE_RELOCATION)) / sizeof(WORD);
 }
-PWORD inline GetImageRelocBlockBase( PIMAGE_BASE_RELOCATION RelocBase ) {
-	return (PWORD)( (ULONG_PTR)RelocBase + sizeof( IMAGE_BASE_RELOCATION ) );
+PWORD inline GetImageRelocBlockBase(PIMAGE_BASE_RELOCATION RelocBase) {
+	return (PWORD)((ULONG_PTR)RelocBase + sizeof(IMAGE_BASE_RELOCATION));
 }
-ULONG_PTR inline GetImageRelocDelta( PVOID ImageBase ) {
-	return (ULONG_PTR)ImageBase - GetImageBase( ImageBase );
+ULONG_PTR inline GetImageRelocDelta(PVOID ImageBase) {
+	return (ULONG_PTR)ImageBase - GetImageBase(ImageBase);
 }
-ULONG_PTR inline GetImageRelocPointer( PVOID ImageBase, PIMAGE_BASE_RELOCATION RelocBase, ULONG Index ) {
+ULONG_PTR inline GetImageRelocPointer(PVOID ImageBase, PIMAGE_BASE_RELOCATION RelocBase, ULONG Index) {
 	return (ULONG_PTR)ImageBase +
 		RelocBase->VirtualAddress +
-		GetImageRelocBlockBase( RelocBase )[Index] & 0xFFF;
+		(GetImageRelocBlockBase(RelocBase)[Index] & 0xFFF);
 }
 // Import
-PIMAGE_IMPORT_DESCRIPTOR inline GetImageImportBase( PVOID ImageBase ) {
-	return (PIMAGE_IMPORT_DESCRIPTOR)GetImageDirectoryEntryVa( ImageBase, IMAGE_DIRECTORY_ENTRY_IMPORT );
+PIMAGE_IMPORT_DESCRIPTOR inline GetImageImportBase(PVOID ImageBase) {
+	return (PIMAGE_IMPORT_DESCRIPTOR)GetImageDirectoryEntryVa(ImageBase, IMAGE_DIRECTORY_ENTRY_IMPORT);
 }
-PIMAGE_THUNK_DATA inline GetImageImportOFT( PVOID ImageBase, PIMAGE_IMPORT_DESCRIPTOR ImportDescriptor ) {
-	return (PIMAGE_THUNK_DATA)( (ULONG_PTR)ImageBase + ImportDescriptor->OriginalFirstThunk );
+PIMAGE_THUNK_DATA inline GetImageImportOFT(PVOID ImageBase, PIMAGE_IMPORT_DESCRIPTOR ImportDescriptor) {
+	return (PIMAGE_THUNK_DATA)((ULONG_PTR)ImageBase + ImportDescriptor->OriginalFirstThunk);
 }
-PIMAGE_THUNK_DATA inline GetImageImportFT( PVOID ImageBase, PIMAGE_IMPORT_DESCRIPTOR ImportDescriptor ) {
-	return (PIMAGE_THUNK_DATA)( (ULONG_PTR)ImageBase + ImportDescriptor->FirstThunk );
+PIMAGE_THUNK_DATA inline GetImageImportFT(PVOID ImageBase, PIMAGE_IMPORT_DESCRIPTOR ImportDescriptor) {
+	return (PIMAGE_THUNK_DATA)((ULONG_PTR)ImageBase + ImportDescriptor->FirstThunk);
 }
-LPCSTR inline GetImageImportModuleName( PVOID ImageBase, PIMAGE_IMPORT_DESCRIPTOR ImportDescriptor ) {
-	return (LPCSTR)( (ULONG_PTR)ImageBase + ImportDescriptor->Name );
+LPCSTR inline GetImageImportModuleName(PVOID ImageBase, PIMAGE_IMPORT_DESCRIPTOR ImportDescriptor) {
+	return (LPCSTR)((ULONG_PTR)ImageBase + ImportDescriptor->Name);
 }
-LPCSTR inline GetImageImportFuncName( PVOID ImageBase, PIMAGE_THUNK_DATA ImportThunk ) {
-	return ( (PIMAGE_IMPORT_BY_NAME)( (ULONG_PTR)ImageBase + ImportThunk->u1.AddressOfData ) )->Name;
+LPCSTR inline GetImageImportFuncName(PVOID ImageBase, PIMAGE_THUNK_DATA ImportThunk) {
+	return ((PIMAGE_IMPORT_BY_NAME)((ULONG_PTR)ImageBase + ImportThunk->u1.AddressOfData))->Name;
 }
-
 
 typedef struct _GUI_INFO
 {
