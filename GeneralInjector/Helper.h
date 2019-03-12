@@ -47,7 +47,7 @@ PIMAGE_DOS_HEADER inline GetImageDosHeader(PVOID ImageBase) { return (PIMAGE_DOS
 PIMAGE_NT_HEADERS inline GetImageNtHeader(PVOID ImageBase) {
 	return (PIMAGE_NT_HEADERS)((ULONG_PTR)ImageBase + ((PIMAGE_DOS_HEADER)ImageBase)->e_lfanew);
 }
-PIMAGE_SECTION_HEADER inline GetImageSecHeader(PVOID ImageBase) {
+PIMAGE_SECTION_HEADER inline GetImageSectionHeader(PVOID ImageBase) {
 	PIMAGE_NT_HEADERS nt = GetImageNtHeader(ImageBase);
 	return (PIMAGE_SECTION_HEADER)((ULONG_PTR)nt + nt->OptionalHeader.SizeOfHeaders);
 }

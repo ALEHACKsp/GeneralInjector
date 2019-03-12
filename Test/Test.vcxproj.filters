@@ -18,12 +18,12 @@
     <ClCompile Include="Source.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="PEHelper.cpp">
+    <ClCompile Include="TestPEHelper.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="PEHelper.h">
+    <ClInclude Include="TestPEHelper.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>

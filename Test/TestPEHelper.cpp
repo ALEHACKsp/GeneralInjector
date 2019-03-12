@@ -1,6 +1,9 @@
-#include "stdafx.h"
-#include "PEHelper.h"
+#include "TestPEHelper.h"
 #include <strsafe.h>
+#include <iostream>
+using std::cout;
+using std::endl;
+
 BOOLEAN PEHelper::Analyze( BOOLEAN Force ) {
 	BOOLEAN isOk = TRUE;
 	__try {
@@ -74,8 +77,7 @@ BOOLEAN PEMapHelper::Analyze( BOOLEAN Force ) {
 				ImageBase + NtHeader64->OptionalHeader.AddressOfEntryPoint : 0;
 		}
 		else {
-			EntryPoint = NtHeader32->OptionalHeader.AddressOfEntryPoint != 0 ?
-				ImageBase + NtHeader32->OptionalHeader.AddressOfEntryPoint : 0;
+			EntryPoint = ImageBase + NtHeader32->OptionalHeader.AddressOfEntryPoint;
 		}
 
 		RelocBase = GetDirectoryEntryVa( IMAGE_DIRECTORY_ENTRY_BASERELOC );
@@ -93,34 +95,36 @@ BOOLEAN PEMapHelper::Analyze( BOOLEAN Force ) {
 	return isOk;
 }
 
-BOOLEAN PEFileHelper::Analyze( BOOLEAN Force ) {
-	if ( !PEHelper::Analyze( Force ) )	return FALSE;
+VOID PEMapHelper::PrintExport() {
+	if ( !ExportBase )	cout << "No export section!" << endl;
 
-	BOOLEAN isOk = TRUE;
-	__try {
-		PIMAGE_NT_HEADERS64 NtHeader64 = (PIMAGE_NT_HEADERS64)NtHeader;
-		PIMAGE_NT_HEADERS32 NtHeader32 = (PIMAGE_NT_HEADERS32)NtHeader;
-		if ( Is64Mod ) {
-			EntryPoint = NtHeader64->OptionalHeader.AddressOfEntryPoint != 0 ?
-				ImageBase + GetFileOffsetByRva(  NtHeader64->OptionalHeader.AddressOfEntryPoint) : 0;
-		}
-		else {
-			EntryPoint = NtHeader32->OptionalHeader.AddressOfEntryPoint != 0 ?
-				ImageBase + GetFileOffsetByRva( NtHeader32->OptionalHeader.AddressOfEntryPoint ) : 0;
-		}
-
-		RelocBase = GetDirectoryEntryVa( IMAGE_DIRECTORY_ENTRY_BASERELOC );
-		ImportBase = GetDirectoryEntryVa( IMAGE_DIRECTORY_ENTRY_IMPORT );
-		ExportBase = (PIMAGE_EXPORT_DIRECTORY)GetDirectoryEntryVa( IMAGE_DIRECTORY_ENTRY_EXPORT );
-		AddressOfOrds = (PUSHORT)( ImageBase + GetFileOffsetByRva( ExportBase->AddressOfNameOrdinals ));
-		AddressOfNames = (PULONG)( ImageBase + GetFileOffsetByRva( ExportBase->AddressOfNames ));
-		AddressOfFuncs = (PULONG)( ImageBase + GetFileOffsetByRva( ExportBase->AddressOfFunctions ));
+	for ( ULONG i = 0; i < ExportBase->NumberOfNames; i++ ) {
+		cout << AddressOfOrds[i] << " : " << GetExportFuncNameByIndex( i ) << endl;
 	}
-	__except ( EXCEPTION_EXECUTE_HANDLER ) {
-		isOk = FALSE;
-	}
-
-	return isOk;
 }
 
+VOID PEMapHelper::PrintImport() {   
+	if ( !ImportBase ) cout << "No import section!" << endl;
 
+	PIMAGE_IMPORT_DESCRIPTOR currentID = (PIMAGE_IMPORT_DESCRIPTOR)ImportBase;
+
+	while ( currentID->Characteristics ) {
+		cout << GetImportModuleName( currentID ) << ":" << endl;
+
+		ULONG_PTR ft = GetImportFirstThunk( currentID );
+		ULONG_PTR oft = GetImportFirstOriginalThunk( currentID );
+
+		while ( ( (PIMAGE_THUNK_DATA32)oft )->u1.AddressOfData )
+		{
+			cout << "\t" << GetImportFuncName( oft ) << endl;
+
+			ft = GetImportNextThunk( ft );
+			oft = GetImportNextOriginalThunk( oft );
+
+		}
+		currentID++;
+
+		cout << endl;
+	}
+
+}
