@@ -24,7 +24,10 @@ protected:
 	ULONG SectionCount;
 	BOOLEAN Is64Mod;
 public:
-	PEHelper( PVOID imageBase ) { ImageBase = (ULONG_PTR)imageBase; }
+	PEHelper( PVOID imageBase ) { 
+		ImageBase = (ULONG_PTR)imageBase; 
+		Analyze(FALSE);
+	}
 	// Analyze
 	BOOLEAN Analyze( BOOLEAN Force );
 	BOOLEAN  IsValidPE() {

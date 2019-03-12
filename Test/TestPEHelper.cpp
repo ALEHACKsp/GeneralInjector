@@ -128,3 +128,33 @@ VOID PEMapHelper::PrintImport() {
 	}
 
 }
+
+BOOLEAN PEFileHelper::Analyze(BOOLEAN Force) {
+	//if (!PEHelper::Analyze(Force))	return FALSE;
+
+	BOOLEAN isOk = TRUE;
+	__try {
+		PIMAGE_NT_HEADERS64 NtHeader64 = (PIMAGE_NT_HEADERS64)NtHeader;
+		PIMAGE_NT_HEADERS32 NtHeader32 = (PIMAGE_NT_HEADERS32)NtHeader;
+		if (Is64Mod) {
+			EntryPoint = NtHeader64->OptionalHeader.AddressOfEntryPoint != 0 ?
+				ImageBase + GetFileOffsetByRva(NtHeader64->OptionalHeader.AddressOfEntryPoint) : 0;
+		}
+		else {
+			EntryPoint = NtHeader32->OptionalHeader.AddressOfEntryPoint != 0 ?
+				ImageBase + GetFileOffsetByRva(NtHeader32->OptionalHeader.AddressOfEntryPoint) : 0;
+		}
+
+		RelocBase = GetDirectoryEntryVa(IMAGE_DIRECTORY_ENTRY_BASERELOC);
+		ImportBase = GetDirectoryEntryVa(IMAGE_DIRECTORY_ENTRY_IMPORT);
+		ExportBase = (PIMAGE_EXPORT_DIRECTORY)GetDirectoryEntryVa(IMAGE_DIRECTORY_ENTRY_EXPORT);
+		AddressOfOrds = (PUSHORT)(ImageBase + GetFileOffsetByRva(ExportBase->AddressOfNameOrdinals));
+		AddressOfNames = (PULONG)(ImageBase + GetFileOffsetByRva(ExportBase->AddressOfNames));
+		AddressOfFuncs = (PULONG)(ImageBase + GetFileOffsetByRva(ExportBase->AddressOfFunctions));
+	}
+	__except (EXCEPTION_EXECUTE_HANDLER) {
+		isOk = FALSE;
+	}
+
+	return isOk;
+}

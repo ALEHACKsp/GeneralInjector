@@ -63,7 +63,7 @@ ULONG_PTR PEHelper::GetExportFuncByName( LPCSTR FuncName ) {
 // PEMapHelper class definition
 //
 BOOLEAN PEMapHelper::Analyze( BOOLEAN Force ) {
-	if ( !PEHelper::Analyze( Force ) )	return FALSE;
+	//if ( !PEHelper::Analyze( Force ) )	return FALSE;
 
 	BOOLEAN isOk = TRUE;
 	__try {
