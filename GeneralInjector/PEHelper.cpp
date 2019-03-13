@@ -35,35 +35,11 @@ BOOLEAN PEHelper::Analyze( BOOLEAN Force ) {
 	return isOk;
 }
 
-ULONG_PTR PEHelper::GetExportFuncByName( LPCSTR FuncName ) {
-	ULONG_PTR address = 0;
-	LPCSTR currentName = NULL;
-
-	__try {
-		for ( ULONG i = 0; i < ExportBase->NumberOfNames; i++ ) {
-			currentName = GetExportFuncNameByIndex( i );
-			if ( strncmp( FuncName, currentName, MAX_PATH ) == 0 ) {
-				address = GetExportFuncByIndex( i );
-
-				// Forward export not supported yet
-				// ...
-
-				break;
-			}
-		}
-	}
-	__except ( EXCEPTION_EXECUTE_HANDLER ) {
-		address = 0;
-	}
-
-	return address;
-}
-
 //
 // PEMapHelper class definition
 //
 BOOLEAN PEMapHelper::Analyze( BOOLEAN Force ) {
-	//if ( !PEHelper::Analyze( Force ) )	return FALSE;
+	if ( !PEHelper::Analyze( Force ) )	return FALSE;
 
 	BOOLEAN isOk = TRUE;
 	__try {
@@ -102,19 +78,19 @@ BOOLEAN PEFileHelper::Analyze( BOOLEAN Force ) {
 		PIMAGE_NT_HEADERS32 NtHeader32 = (PIMAGE_NT_HEADERS32)NtHeader;
 		if ( Is64Mod ) {
 			EntryPoint = NtHeader64->OptionalHeader.AddressOfEntryPoint != 0 ?
-				ImageBase + GetFileOffsetByRva(  NtHeader64->OptionalHeader.AddressOfEntryPoint) : 0;
+				ImageBase + RvaToOffset(  NtHeader64->OptionalHeader.AddressOfEntryPoint) : 0;
 		}
 		else {
 			EntryPoint = NtHeader32->OptionalHeader.AddressOfEntryPoint != 0 ?
-				ImageBase + GetFileOffsetByRva( NtHeader32->OptionalHeader.AddressOfEntryPoint ) : 0;
+				ImageBase + RvaToOffset( NtHeader32->OptionalHeader.AddressOfEntryPoint ) : 0;
 		}
 
 		RelocBase = GetDirectoryEntryVa( IMAGE_DIRECTORY_ENTRY_BASERELOC );
 		ImportBase = GetDirectoryEntryVa( IMAGE_DIRECTORY_ENTRY_IMPORT );
 		ExportBase = (PIMAGE_EXPORT_DIRECTORY)GetDirectoryEntryVa( IMAGE_DIRECTORY_ENTRY_EXPORT );
-		AddressOfOrds = (PUSHORT)( ImageBase + GetFileOffsetByRva( ExportBase->AddressOfNameOrdinals ));
-		AddressOfNames = (PULONG)( ImageBase + GetFileOffsetByRva( ExportBase->AddressOfNames ));
-		AddressOfFuncs = (PULONG)( ImageBase + GetFileOffsetByRva( ExportBase->AddressOfFunctions ));
+		AddressOfOrds = (PUSHORT)( ImageBase + RvaToOffset( ExportBase->AddressOfNameOrdinals ));
+		AddressOfNames = (PULONG)( ImageBase + RvaToOffset( ExportBase->AddressOfNames ));
+		AddressOfFuncs = (PULONG)( ImageBase + RvaToOffset( ExportBase->AddressOfFunctions ));
 	}
 	__except ( EXCEPTION_EXECUTE_HANDLER ) {
 		isOk = FALSE;

@@ -26,7 +26,6 @@ protected:
 public:
 	PEHelper( PVOID imageBase ) { 
 		ImageBase = (ULONG_PTR)imageBase; 
-		Analyze(FALSE);
 	}
 	// Analyze
 	BOOLEAN Analyze( BOOLEAN Force );
@@ -67,6 +66,7 @@ public:
 		return ( SectionHeader[Index] ).VirtualAddress - ( SectionHeader[Index].PointerToRawData );
 	}
 	ULONG_PTR GetSectionDeltaByRva( ULONG_PTR Rva ) { return GetSectionDeltaByIndex( GetSectionIndexByRva( Rva ) ); }
+	ULONG_PTR GetSectionDeltaByOffset( ULONG_PTR Offset ) { return GetSectionDeltaByIndex( GetSectionIndexByOffset( Offset ) ); }
 	LONG GetSectionIndexByRva( ULONG_PTR Rva ) {
 		ULONG i = 0;
 		for ( ; i < SectionCount; i++ ) {
@@ -78,8 +78,22 @@ public:
 
 		return i < SectionCount ? i : -1;
 	}
-	LONG GetSectionIndexByVa( ULONG_PTR Va ) {
-		return GetSectionIndexByRva( Va - ImageBase );
+	LONG GetSectionIndexByOffset( ULONG_PTR Offset ) {
+		ULONG i = 0;
+		for ( ; i < SectionCount; i++ ) {
+			if ( Offset >= SectionHeader[i].PointerToRawData &&
+				Offset <= SectionHeader[i].PointerToRawData + SectionHeader[i].SizeOfRawData ) {
+				break;
+			}
+		}
+
+		return i < SectionCount ? i : -1;
+	}
+	ULONG_PTR OffsetToRva( ULONG_PTR Offset ) {
+		return Offset + GetSectionDeltaByOffset( Offset );
+	}
+	ULONG_PTR RvaToOffset( ULONG_PTR Rva ) {
+		return Rva - GetSectionDeltaByRva( Rva );
 	}
 
 	// Relocation
@@ -138,9 +152,49 @@ public:
 	virtual LPCSTR  GetImportFuncName( ULONG_PTR ImportThunk ) = 0;
 
 	// Export
-	virtual ULONG_PTR   GetExportFuncByIndex( ULONG Index ) = 0;
-	virtual LPCSTR   GetExportFuncNameByIndex( ULONG Index ) = 0;
-	ULONG_PTR GetExportFuncByName( LPCSTR FuncName );
+	BOOLEAN IsForwardExport( ULONG_PTR FunctionRva ) {
+		return GetSectionIndexByRva( FunctionRva ) ==
+			GetSectionIndexByRva( GetDirectoryEntryRva( IMAGE_DIRECTORY_ENTRY_EXPORT ) );
+	}
+	ULONG_PTR GetExportFuncRvaByName( LPCSTR FuncName ) {
+		ULONG_PTR rva = 0;
+		LPCSTR currentName = NULL;
+
+		__try {
+			for ( ULONG i = 0; i < ExportBase->NumberOfNames; i++ ) {
+				currentName = GetExportFuncNameByIndex( i );
+				if ( strncmp( FuncName, currentName, MAX_PATH ) == 0 ) {
+					rva = GetExportFuncRvaByIndex( i );
+
+					if ( IsForwardExport( rva ) ) rva = 0;
+					// Forward export not supported yet
+					// ...
+
+					break;
+				}
+			}
+		}
+		__except ( EXCEPTION_EXECUTE_HANDLER ) {
+			rva = 0;
+		}
+
+		return rva;
+	}
+	ULONG_PTR GetExportFuncRvaByIndex(ULONG Index){
+		__try {
+			if ( Index >= ExportBase->NumberOfFunctions )	return NULL;
+
+			return AddressOfFuncs[AddressOfOrds[Index]] ;
+		}
+		__except ( EXCEPTION_EXECUTE_HANDLER ) {
+			return 0;
+		}
+	}
+	virtual ULONG_PTR GetExportFuncByName( LPCSTR FuncName ) = 0;
+	virtual ULONG_PTR GetExportFuncByIndex( ULONG Index ) = 0;
+	virtual LPCSTR GetExportFuncNameByIndex( ULONG Index ) = 0;
+	virtual LPCSTR GetForwardExportName( ULONG_PTR FuncRva ) = 0;
+
 
 	//VOID PrintExport();
 	//VOID PrintImport();
@@ -214,14 +268,12 @@ public:
 
 	// Export
 	virtual ULONG_PTR   GetExportFuncByIndex( ULONG Index ) {
-		__try {
-			if ( Index >= ExportBase->NumberOfFunctions )	return NULL;
-
-			return AddressOfFuncs[AddressOfOrds[Index]] + ImageBase;
-		}
-		__except ( EXCEPTION_EXECUTE_HANDLER ) {
-			return 0;
-		}
+		ULONG_PTR rva = GetExportFuncRvaByIndex( Index );
+		return rva ? rva + ImageBase : 0;
+	}
+	virtual ULONG_PTR GetExportFuncByName( LPCSTR FuncName ) {
+		ULONG_PTR rva = GetExportFuncRvaByName( FuncName );
+		return rva ? rva + ImageBase : 0;
 	}
 	virtual LPCSTR   GetExportFuncNameByIndex( ULONG Index ) {
 		__try {
@@ -232,6 +284,9 @@ public:
 		__except ( EXCEPTION_EXECUTE_HANDLER ) {
 			return 0;
 		}
+	}
+	virtual LPCSTR GetForwardExportName( ULONG_PTR FuncRva ) {
+		return (LPCSTR)( FuncRva + ImageBase );
 	}
 
 	//VOID PrintExport();
@@ -245,15 +300,12 @@ private:
 	PEFileHelper( PVOID imageBase ) : PEHelper( imageBase ) {}
 
 	virtual BOOLEAN Analyze( BOOLEAN Force );
-	ULONG_PTR GetFileOffsetByRva( ULONG_PTR Rva ) {
-		return Rva - GetSectionDeltaByRva( Rva );
-	}
 
 	// Header information
 	virtual ULONG_PTR GetDirectoryEntryVa( ULONG Index ) {
 		ULONG_PTR rva = GetDirectoryEntryRva( Index );
 		return rva != 0 ?
-			ImageBase + GetFileOffsetByRva( rva ) :
+			ImageBase + RvaToOffset( rva ) :
 			0;
 	}
 
@@ -262,7 +314,7 @@ private:
 		__try {
 			ULONG_PTR rva = RelocBlock->VirtualAddress +
 				( GetRelocBlockEntryBase( RelocBlock )[Index] & 0xFFF );
-			return ImageBase + GetFileOffsetByRva( rva );
+			return ImageBase + RvaToOffset( rva );
 		}
 		__except ( EXCEPTION_EXECUTE_HANDLER ) {
 			return 0;
@@ -272,7 +324,7 @@ private:
 	// Import 
 	virtual ULONG_PTR GetImportFirstOriginalThunk( PIMAGE_IMPORT_DESCRIPTOR ImportDescriptor ) {
 		__try {
-			return ImageBase + GetFileOffsetByRva( ImportDescriptor->OriginalFirstThunk );
+			return ImageBase + RvaToOffset( ImportDescriptor->OriginalFirstThunk );
 		}
 		__except ( EXCEPTION_EXECUTE_HANDLER ) {
 			return 0;
@@ -280,7 +332,7 @@ private:
 	}
 	virtual ULONG_PTR GetImportFirstThunk( PIMAGE_IMPORT_DESCRIPTOR ImportDescriptor ) {
 		__try {
-			return ImageBase + GetFileOffsetByRva( ImportDescriptor->FirstThunk );
+			return ImageBase + RvaToOffset( ImportDescriptor->FirstThunk );
 		}
 		__except ( EXCEPTION_EXECUTE_HANDLER ) {
 			return 0;
@@ -288,7 +340,7 @@ private:
 	}
 	virtual LPCSTR   GetImportModuleName( PIMAGE_IMPORT_DESCRIPTOR ImportDescriptor ) {
 		__try {
-			return (LPCSTR)( ImageBase + GetFileOffsetByRva( ImportDescriptor->Name ) );
+			return (LPCSTR)( ImageBase + RvaToOffset( ImportDescriptor->Name ) );
 		}
 		__except ( EXCEPTION_EXECUTE_HANDLER ) {
 			return NULL;
@@ -297,8 +349,8 @@ private:
 	virtual LPCSTR  GetImportFuncName( ULONG_PTR ImportThunk ) {
 		__try {
 			return Is64Mod ?
-				( (PIMAGE_IMPORT_BY_NAME)( ImageBase + GetFileOffsetByRva( ( (PIMAGE_THUNK_DATA64)ImportThunk )->u1.AddressOfData ) ) )->Name :
-				( (PIMAGE_IMPORT_BY_NAME)( ImageBase + GetFileOffsetByRva( ( (PIMAGE_THUNK_DATA32)ImportThunk )->u1.AddressOfData ) ) )->Name;
+				( (PIMAGE_IMPORT_BY_NAME)( ImageBase + RvaToOffset( ( (PIMAGE_THUNK_DATA64)ImportThunk )->u1.AddressOfData ) ) )->Name :
+				( (PIMAGE_IMPORT_BY_NAME)( ImageBase + RvaToOffset( ( (PIMAGE_THUNK_DATA32)ImportThunk )->u1.AddressOfData ) ) )->Name;
 		}
 		__except ( EXCEPTION_EXECUTE_HANDLER ) {
 			return NULL;
@@ -307,24 +359,25 @@ private:
 
 	// Export
 	virtual ULONG_PTR   GetExportFuncByIndex( ULONG Index ) {
-		__try {
-			if ( Index >= ExportBase->NumberOfFunctions )	return NULL;
-
-			return GetFileOffsetByRva( AddressOfFuncs[AddressOfOrds[Index]] ) + ImageBase;
-		}
-		__except ( EXCEPTION_EXECUTE_HANDLER ) {
-			return 0;
-		}
+		ULONG_PTR rva = GetExportFuncRvaByIndex( Index );
+		return rva ? RvaToOffset( rva ) + ImageBase : 0;
+	}
+	virtual ULONG_PTR GetExportFuncByName( LPCSTR FuncName ) {
+		ULONG_PTR rva = GetExportFuncRvaByName( FuncName );
+		return rva ? RvaToOffset( rva ) + ImageBase : 0;
 	}
 	virtual LPCSTR   GetExportFuncNameByIndex( ULONG Index ) {
 		__try {
 			if ( Index >= ExportBase->NumberOfNames ) return NULL;
 
-			return (LPCSTR)( ImageBase + GetFileOffsetByRva( AddressOfNames[Index] ) );
+			return (LPCSTR)( ImageBase + RvaToOffset( AddressOfNames[Index] ) );
 		}
 		__except ( EXCEPTION_EXECUTE_HANDLER ) {
 			return 0;
 		}
+	}
+	virtual LPCSTR GetForwardExportName( ULONG_PTR FuncRva ) {
+		return (LPCSTR)( RvaToOffset( FuncRva ) + ImageBase );
 	}
 };
 

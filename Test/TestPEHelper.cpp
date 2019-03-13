@@ -1,8 +1,11 @@
 #include "TestPEHelper.h"
 #include <strsafe.h>
 #include <iostream>
+#include <iomanip>
 using std::cout;
 using std::endl;
+using std::setw;
+using std::left;
 
 BOOLEAN PEHelper::Analyze( BOOLEAN Force ) {
 	BOOLEAN isOk = TRUE;
@@ -66,7 +69,7 @@ ULONG_PTR PEHelper::GetExportFuncByName( LPCSTR FuncName ) {
 // PEMapHelper class definition
 //
 BOOLEAN PEMapHelper::Analyze( BOOLEAN Force ) {
-	if ( !PEHelper::Analyze( Force ) )	return FALSE;
+	//if ( !PEHelper::Analyze( Force ) )	return FALSE;
 
 	BOOLEAN isOk = TRUE;
 	__try {
@@ -98,8 +101,25 @@ BOOLEAN PEMapHelper::Analyze( BOOLEAN Force ) {
 VOID PEMapHelper::PrintExport() {
 	if ( !ExportBase )	cout << "No export section!" << endl;
 
+	cout << left 
+		<< setw( 10 ) << "Ordinal"
+		<< setw( 40 ) << "ExportName"
+		<< setw( 20 ) << "Rva" << endl;
 	for ( ULONG i = 0; i < ExportBase->NumberOfNames; i++ ) {
-		cout << AddressOfOrds[i] << " : " << GetExportFuncNameByIndex( i ) << endl;
+		LPCSTR name = GetExportFuncNameByIndex( i );
+		LPCSTR exportName = NULL;
+		ULONG_PTR rva = GetExportFuncRvaByIndex( i );
+		if ( IsForwardExport( rva ) ) {
+			exportName = GetForwardExportName( rva );
+		}
+
+		cout << left 
+			<< setw( 10 ) << AddressOfOrds[i]
+			<< setw( 40 ) << name
+			<< setw( 20 ) << (PVOID)rva;
+		if ( exportName )
+			cout << "(Forwarded --> " << exportName << ")";
+		cout << endl;
 	}
 }
 
