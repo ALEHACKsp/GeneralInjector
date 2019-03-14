@@ -16,6 +16,7 @@ protected:
 	ULONG_PTR EntryPoint;
 	ULONG_PTR RelocBase;
 	ULONG_PTR ImportBase;
+	ULONG_PTR DelayImportBase;
 	PIMAGE_EXPORT_DIRECTORY ExportBase;
 	PUSHORT AddressOfOrds;
 	PULONG AddressOfNames;
@@ -24,8 +25,8 @@ protected:
 	ULONG SectionCount;
 	BOOLEAN Is64Mod;
 public:
-	PEHelper( PVOID imageBase ) { 
-		ImageBase = (ULONG_PTR)imageBase; 
+	PEHelper( PVOID imageBase ) {
+		ImageBase = (ULONG_PTR)imageBase;
 	}
 	// Analyze
 	BOOLEAN Analyze( BOOLEAN Force );
@@ -125,6 +126,13 @@ public:
 
 	// Import
 	virtual ULONG_PTR  GetImportFirstOriginalThunk( PIMAGE_IMPORT_DESCRIPTOR ImportDescriptor ) = 0;
+	virtual ULONG_PTR  GetImportFirstThunk( PIMAGE_IMPORT_DESCRIPTOR ImportDescriptor ) = 0;
+	virtual LPCSTR   GetImportModuleName( PIMAGE_IMPORT_DESCRIPTOR ImportDescriptor ) = 0;
+
+	virtual ULONG_PTR GetDelayImportIAT( PIMAGE_DELAYLOAD_DESCRIPTOR ImportDelayDesc ) = 0;
+	virtual ULONG_PTR GetDelayImportINT( PIMAGE_DELAYLOAD_DESCRIPTOR ImportDelayDesc ) = 0;
+	virtual LPCSTR GetDelayImportModuleName( PIMAGE_DELAYLOAD_DESCRIPTOR ImportDelayDesc ) = 0;
+
 	ULONG_PTR  GetImportNextOriginalThunk( ULONG_PTR OriginalThunk ) {
 		__try {
 			return Is64Mod ?
@@ -135,8 +143,6 @@ public:
 			return 0;
 		}
 	}
-
-	virtual ULONG_PTR  GetImportFirstThunk( PIMAGE_IMPORT_DESCRIPTOR ImportDescriptor ) = 0;
 	ULONG_PTR  GetImportNextThunk( ULONG_PTR Thunk ) {
 		__try {
 			return Is64Mod ?
@@ -148,7 +154,6 @@ public:
 		}
 	}
 
-	virtual LPCSTR   GetImportModuleName( PIMAGE_IMPORT_DESCRIPTOR ImportDescriptor ) = 0;
 	virtual LPCSTR  GetImportFuncName( ULONG_PTR ImportThunk ) = 0;
 
 	// Export
@@ -180,11 +185,11 @@ public:
 
 		return rva;
 	}
-	ULONG_PTR GetExportFuncRvaByIndex(ULONG Index){
+	ULONG_PTR GetExportFuncRvaByIndex( ULONG Index ) {
 		__try {
 			if ( Index >= ExportBase->NumberOfFunctions )	return NULL;
 
-			return AddressOfFuncs[AddressOfOrds[Index]] ;
+			return AddressOfFuncs[AddressOfOrds[Index]];
 		}
 		__except ( EXCEPTION_EXECUTE_HANDLER ) {
 			return 0;
@@ -246,7 +251,6 @@ public:
 			return 0;
 		}
 	}
-
 	virtual LPCSTR   GetImportModuleName( PIMAGE_IMPORT_DESCRIPTOR ImportDescriptor ) {
 		__try {
 			return (LPCSTR)( ImageBase + ImportDescriptor->Name );
@@ -255,6 +259,33 @@ public:
 			return NULL;
 		}
 	}
+
+	virtual ULONG_PTR GetDelayImportIAT( PIMAGE_DELAYLOAD_DESCRIPTOR ImportDelayDesc ) {
+		__try {
+			return ImageBase + ImportDelayDesc->ImportAddressTableRVA;
+		}
+		__except ( EXCEPTION_EXECUTE_HANDLER ) {
+			return 0;
+		}
+	}
+	virtual ULONG_PTR GetDelayImportINT( PIMAGE_DELAYLOAD_DESCRIPTOR ImportDelayDesc ) {
+		__try {
+			return ImageBase + ImportDelayDesc->ImportNameTableRVA;
+		}
+		__except ( EXCEPTION_EXECUTE_HANDLER ) {
+			return 0;
+		}
+	}
+	virtual LPCSTR GetDelayImportModuleName( PIMAGE_DELAYLOAD_DESCRIPTOR ImportDelayDesc ) {
+		__try {
+			return LPCSTR( ImageBase + ImportDelayDesc->DllNameRVA );
+		}
+		__except ( EXCEPTION_EXECUTE_HANDLER ) {
+			return 0;
+		}
+
+	}
+
 	virtual LPCSTR  GetImportFuncName( ULONG_PTR ImportThunk ) {
 		__try {
 			return Is64Mod ?
@@ -346,6 +377,33 @@ private:
 			return NULL;
 		}
 	}
+
+	virtual ULONG_PTR GetDelayImportIAT( PIMAGE_DELAYLOAD_DESCRIPTOR ImportDelayDesc ) {
+		__try {
+			return ImageBase + RvaToOffset( ImportDelayDesc->ImportAddressTableRVA );
+		}
+		__except ( EXCEPTION_EXECUTE_HANDLER ) {
+			return 0;
+		}
+	}
+	virtual ULONG_PTR GetDelayImportINT( PIMAGE_DELAYLOAD_DESCRIPTOR ImportDelayDesc ) {
+		__try {
+			return ImageBase + RvaToOffset( ImportDelayDesc->ImportNameTableRVA );
+		}
+		__except ( EXCEPTION_EXECUTE_HANDLER ) {
+			return 0;
+		}
+	}
+	virtual LPCSTR GetDelayImportModuleName( PIMAGE_DELAYLOAD_DESCRIPTOR ImportDelayDesc ) {
+		__try {
+			return LPCSTR(ImageBase + RvaToOffset( ImportDelayDesc->DllNameRVA ));
+		}
+		__except ( EXCEPTION_EXECUTE_HANDLER ) {
+			return 0;
+		}
+	
+	}
+
 	virtual LPCSTR  GetImportFuncName( ULONG_PTR ImportThunk ) {
 		__try {
 			return Is64Mod ?

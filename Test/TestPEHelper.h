@@ -16,6 +16,7 @@ protected:
 	ULONG_PTR EntryPoint;
 	ULONG_PTR RelocBase;
 	ULONG_PTR ImportBase;
+	ULONG_PTR DelayImportBase;
 	PIMAGE_EXPORT_DIRECTORY ExportBase;
 	PUSHORT AddressOfOrds;
 	PULONG AddressOfNames;

@@ -56,6 +56,7 @@ BOOLEAN PEMapHelper::Analyze( BOOLEAN Force ) {
 
 		RelocBase = GetDirectoryEntryVa( IMAGE_DIRECTORY_ENTRY_BASERELOC );
 		ImportBase = GetDirectoryEntryVa( IMAGE_DIRECTORY_ENTRY_IMPORT );
+		DelayImportBase = GetDirectoryEntryVa( IMAGE_DIRECTORY_ENTRY_DELAY_IMPORT );
 		ExportBase = (PIMAGE_EXPORT_DIRECTORY)GetDirectoryEntryVa( IMAGE_DIRECTORY_ENTRY_EXPORT );
 		AddressOfOrds = (PUSHORT)( ImageBase + ExportBase->AddressOfNameOrdinals );
 		AddressOfNames = (PULONG)( ImageBase + ExportBase->AddressOfNames );
@@ -87,6 +88,7 @@ BOOLEAN PEFileHelper::Analyze( BOOLEAN Force ) {
 
 		RelocBase = GetDirectoryEntryVa( IMAGE_DIRECTORY_ENTRY_BASERELOC );
 		ImportBase = GetDirectoryEntryVa( IMAGE_DIRECTORY_ENTRY_IMPORT );
+		DelayImportBase = GetDirectoryEntryVa( IMAGE_DIRECTORY_ENTRY_DELAY_IMPORT );
 		ExportBase = (PIMAGE_EXPORT_DIRECTORY)GetDirectoryEntryVa( IMAGE_DIRECTORY_ENTRY_EXPORT );
 		AddressOfOrds = (PUSHORT)( ImageBase + RvaToOffset( ExportBase->AddressOfNameOrdinals ));
 		AddressOfNames = (PULONG)( ImageBase + RvaToOffset( ExportBase->AddressOfNames ));

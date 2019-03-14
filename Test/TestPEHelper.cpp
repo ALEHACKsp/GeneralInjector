@@ -85,6 +85,7 @@ BOOLEAN PEMapHelper::Analyze( BOOLEAN Force ) {
 
 		RelocBase = GetDirectoryEntryVa( IMAGE_DIRECTORY_ENTRY_BASERELOC );
 		ImportBase = GetDirectoryEntryVa( IMAGE_DIRECTORY_ENTRY_IMPORT );
+		DelayImportBase = GetDirectoryEntryVa( IMAGE_DIRECTORY_ENTRY_DELAY_IMPORT );
 		ExportBase = (PIMAGE_EXPORT_DIRECTORY)GetDirectoryEntryVa( IMAGE_DIRECTORY_ENTRY_EXPORT );
 		AddressOfOrds = (PUSHORT)( ImageBase + ExportBase->AddressOfNameOrdinals );
 		AddressOfNames = (PULONG)( ImageBase + ExportBase->AddressOfNames );
@@ -126,8 +127,8 @@ VOID PEMapHelper::PrintExport() {
 VOID PEMapHelper::PrintImport() {   
 	if ( !ImportBase ) cout << "No import section!" << endl;
 
+	// Normal imports
 	PIMAGE_IMPORT_DESCRIPTOR currentID = (PIMAGE_IMPORT_DESCRIPTOR)ImportBase;
-
 	while ( currentID->Characteristics ) {
 		cout << GetImportModuleName( currentID ) << ":" << endl;
 
@@ -145,6 +146,30 @@ VOID PEMapHelper::PrintImport() {
 		currentID++;
 
 		cout << endl;
+	}
+
+	// Delay imports
+	cout << "Delay Import: " << endl << endl;
+	if ( DelayImportBase ) {
+		PIMAGE_DELAYLOAD_DESCRIPTOR currentIDD = (PIMAGE_DELAYLOAD_DESCRIPTOR)DelayImportBase;
+		while ( currentIDD->ImportAddressTableRVA ) {
+			cout << (LPCSTR)(ImageBase + currentIDD->DllNameRVA) << ":" << endl;
+
+			ULONG_PTR ft = currentIDD->ImportAddressTableRVA + ImageBase;
+			ULONG_PTR oft = currentIDD->ImportNameTableRVA + ImageBase;
+
+			while ( ( (PIMAGE_THUNK_DATA32)oft )->u1.AddressOfData )
+			{
+				cout << "\t" << GetImportFuncName( oft ) << endl;
+
+				ft = GetImportNextThunk( ft );
+				oft = GetImportNextOriginalThunk( oft );
+
+			}
+			currentIDD++;
+
+			cout << endl;
+		}
 	}
 
 }
@@ -167,6 +192,7 @@ BOOLEAN PEFileHelper::Analyze(BOOLEAN Force) {
 
 		RelocBase = GetDirectoryEntryVa(IMAGE_DIRECTORY_ENTRY_BASERELOC);
 		ImportBase = GetDirectoryEntryVa(IMAGE_DIRECTORY_ENTRY_IMPORT);
+		DelayImportBase = GetDirectoryEntryVa( IMAGE_DIRECTORY_ENTRY_DELAY_IMPORT );
 		ExportBase = (PIMAGE_EXPORT_DIRECTORY)GetDirectoryEntryVa(IMAGE_DIRECTORY_ENTRY_EXPORT);
 		AddressOfOrds = (PUSHORT)(ImageBase + GetFileOffsetByRva(ExportBase->AddressOfNameOrdinals));
 		AddressOfNames = (PULONG)(ImageBase + GetFileOffsetByRva(ExportBase->AddressOfNames));
